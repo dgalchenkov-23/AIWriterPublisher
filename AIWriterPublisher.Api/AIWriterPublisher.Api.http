@@ -1,0 +1,6 @@
+@AIWriterPublisher.Api_HostAddress = http://localhost:5057
+
+GET {{AIWriterPublisher.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

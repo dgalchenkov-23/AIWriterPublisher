@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Writer Publisher — Генератор Обложек</title>
+    <style>
+        :root {
+            --bg-color: #121214;
+            --card-bg: #1a1a1e;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 { text-align: center; color: #fff; margin-bottom: 30px; }
+        
+        .section {
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+        }
+
+        label { display: block; margin-bottom: 8px; font-weight: 600; }
+        
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 12px;
+            background: #26262b;
+            border: 1px solid #3f3f46;
+            border-radius: 6px;
+            color: #fff;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+            font-size: 15px;
+        }
+
+        button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:hover { background: var(--accent-hover); }
+        button:disabled { background: #4b5563; cursor: not-allowed; }
+
+        /* Сетка для концептов */
+        .concepts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .concept-card {
+            background: #222227;
+            border: 2px solid #3f3f46;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .concept-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            background: #2a2a30;
+        }
+
+        .concept-card h3 { margin-top: 0; color: #fff; }
+        .concept-card p { font-size: 14px; color: var(--text-muted); line-height: 1.4; }
+
+        /* Результат арт-генерации */
+        .result-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .cover-image {
+            max-width: 400px;
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
+            border: 1px solid #3f3f46;
+        }
+
+        .prompt-preview {
+            background: #1e1e24;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #34d399;
+            width: 100%;
+            box-sizing: border-box;
+            border-left: 4px solid var(--accent);
+        }
+
+        /* Обновленные стили лоадеров */
+        .loading { 
+            text-align: center; 
+            color: var(--accent); 
+            font-weight: bold; 
+            display: none; 
+            margin-top: 20px;
+            padding: 20px;
+            background: #1e1e24;
+            border-radius: 8px;
+            border: 1px dashed #3f3f46;
+        }
+
+        .loader-icon {
+            font-size: 40px;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+
+        /* Классы для анимаций */
+        .spin {
+            animation: spin 2s linear infinite;
+        }
+
+        .pulse-spin {
+            animation: spin 3s linear infinite, pulse 1.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.8); filter: drop-shadow(0 0 2px var(--accent)); }
+            100% { transform: scale(1.2); filter: drop-shadow(0 0 12px var(--accent)); }
+        }
+
+        #coverImg {
+            display: none; /* Изначально скрыта */
+            margin: 20px auto;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        /* Класс, который мы будем добавлять через JS */
+        .visible {
+            display: block !important;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎨 AI Cover Studio</h1>
+
+    <div class="section">
+        <h2>Шаг 1: Опишите вашу книгу</h2>
+        <label for="genre">Жанр книги</label>
+        <input type="text" id="genre" value="Славянское фэнтези" placeholder="Например: Научная фантастика, Роман, Детектив...">
+        <label for="description">Синопсис / Краткое описание сюжета</label>
+        <textarea id="description" rows="4">Малуша, дочь лекаря, вынуждена бежать из своего поселения, когда на него нападают наемники, посланные за её семьей. У неё есть только один шанс на спасение — добраться до священного дуба на границе земель, имея при себе лишь древний семейный амулет. Этот амулет начинает светиться и пульсировать, когда она бежит сквозь густой туманный лес, притягивая к себе лесных духов. Она осознает, что амулет — это ключ к древнему источнику силы, который жаждет захватить враг.</textarea>
+
+        <button id="brainstormBtn" onclick="brainstorm()">Придумать концепции обложки</button>
+        <div id="brainstormLoading" class="loading">
+            <div class="loader-icon spin">🔮</div>
+            <div style="color: #a78bfa;">Арт-директор генерирует идеи... Подождите...</div>
+        </div>
+    </div>
+
+    <div id="conceptsSection" class="section" style="display: none;">
+        <h2>Шаг 2: Выберите понравившуюся концепцию</h2>
+        <p style="color: var(--text-muted)">Нажмите на карточку, чтобы запустить генерацию финального арта.</p>
+        <div class="concepts-grid" id="conceptsGrid"></div>
+        <div id="generateLoading" class="loading">
+            <div id="artLoaderIcon" class="loader-icon">🍌</div>
+            <div id="artLoaderText" style="color: var(--text);">Промпт-инженер собирает ТЗ...</div>
+        </div>
+    </div>
+
+    <div id="resultSection" class="section" style="display: none;">
+        <h2>Результат генерации</h2>
+        <div class="result-box">
+            <div class="prompt-preview" id="promptText"></div>
+            <img id="coverImg" 
+                class="cover-image" 
+                alt="Обложка книги" 
+                referrerpolicy="no-referrer" 
+                crossorigin="anonymous" src="" id="coverImg" class="cover-image" alt="Обложка книги"
+            >
+        </div>
+    </div>
+</div>
+
+<script>
+    async function brainstorm() {
+        const genre = document.getElementById('genre').value;
+        const description = document.getElementById('description').value;
+        
+        const btn = document.getElementById('brainstormBtn');
+        const loading = document.getElementById('brainstormLoading');
+        
+        btn.disabled = true;
+        loading.style.display = 'block';
+        document.getElementById('conceptsSection').style.display = 'none';
+        document.getElementById('resultSection').style.display = 'none';
+
+        try {
+            const response = await fetch('/api/CoverGenerator/brainstorm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ genre, description })
+            });
+
+            const concepts = await response.json();
+            renderConcepts(genre, concepts);
+        } catch (error) {
+            console.error(error);
+            alert('Произошла ошибка при брейншторме. Загляните в консоль.');
+        } finally {
+            btn.disabled = false;
+            loading.style.display = 'none';
+        }
+    }
+
+    // Отрисовка карточек-концептов
+    function renderConcepts(genre, concepts) {
+        const grid = document.getElementById('conceptsGrid');
+        grid.innerHTML = '';
+
+        let actualList = [];
+        if (Array.isArray(concepts)) {
+            actualList = concepts;
+        } else if (concepts && typeof concepts === 'object') {
+            for (let key in concepts) {
+                if (Array.isArray(concepts[key])) {
+                    actualList = concepts[key];
+                    break;
+                }
+            }
+        }
+
+        if (actualList.length === 0) {
+            alert('Не удалось распознать формат списка концепций.');
+            return;
+        }
+
+        // Каждому концепту добавляем уникальный ID (индекс), чтобы фронт мог адресовать кэш
+        actualList.forEach((c, index) => {
+            // Инициализируем пустой кэш для технического промпта прямо в объекте концепта
+            c.cachedTechnicalPrompt = ''; 
+
+            const card = document.createElement('div');
+            card.className = 'concept-card';
+            card.id = `concept-card-${index}`; // даем ID карточке
+            card.style.cursor = 'default'; 
+            
+            // Экранируем кавычки для безопасной передачи в inline JS
+            const safeVisuals = c.visualElements.replace(/'/g, "\\'").replace(/"/g, '\\"');
+
+            card.innerHTML = `
+                <div>
+                    <h3>${c.title}</h3>
+                    <p>${c.description}</p>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button style="flex: 1; padding: 8px 12px; font-size: 13px; background: #eab308;" 
+                            onclick="generateCover('${genre}', '${safeVisuals}', 'google', ${index}, this)">
+                        🍌 Банана 
+                    </button>
+                    <button style="flex: 1; padding: 8px 12px; font-size: 13px; background: #10b981;" 
+                            onclick="generateCover('${genre}', '${safeVisuals}', 'pollinations', ${index}, this)">
+                        🌴 Poly
+                    </button>
+                </div>
+            `;
+            
+            // Сохраняем объект концепта прямо в data-атрибут DOM-элемента карточки (кэш на фронте)
+            card.dataContext = c;
+            grid.appendChild(card);
+        });
+
+        document.getElementById('conceptsSection').style.display = 'block';
+        grid.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // 2. Оптимизированный запрос к бэкенду с поддержкой кэширования промпта
+    async function generateCover(genre, visualElements, engine, cardIndex, buttonElement) {
+        const loading = document.getElementById('generateLoading');
+        const loaderIcon = document.getElementById('artLoaderIcon');
+        const loaderText = document.getElementById('artLoaderText');
+        
+        // Достаем объект концепта из его карточки
+        const card = document.getElementById(`concept-card-${cardIndex}`);
+        const conceptData = card.dataContext;
+        
+        // Проверяем: есть ли уже готовый промпт в кэше карточки?
+        const hasCache = conceptData.cachedTechnicalPrompt && conceptData.cachedTechnicalPrompt.trim() !== '';
+
+        // Динамический лоадер
+        if (engine === 'google') {
+            loaderIcon.innerText = '🍌';
+            loaderIcon.className = 'loader-icon pulse-spin';
+            loaderText.innerHTML = hasCache 
+                ? 'Промпт уже готов! Стучимся напрямую в NanoBanana... <br><span style="color:#34d399; font-size:12px;">(Экономия токенов 100%)</span>'
+                : 'НаноБанана штурмует сервера Google... <br><span style="color:var(--text-muted); font-size:12px;">(Генерация ТЗ + рендер)</span>';
+        } else {
+            loaderIcon.innerText = '🌺';
+            loaderIcon.className = 'loader-icon spin';
+            loaderText.innerHTML = 'Прорываемся через тропики Pollinations... <br><span style="color:var(--text-muted); font-size:12px;">(Прямой коннект без очереди)</span>';
+        }
+
+        loading.style.display = 'block';
+        document.getElementById('resultSection').style.display = 'none';
+
+        try {
+            // Сборка тела запроса. Добавляем поле technicalPrompt (если оно есть в кэше)
+            const requestBody = {
+                genre: genre,
+                visualElements: visualElements,
+                engine: engine,
+                technicalPrompt: conceptData.cachedTechnicalPrompt // Передаем кэш (может быть пустой строкой)
+            };
+
+            const response = await fetch('/api/CoverGenerator/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                throw new Error(`Status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            // КРИТИЧЕСКИЙ МОМЕНТ: Если бэк вернул сгенерированный промпт, сохраняем его в кэш карточки!
+            if (data.technicalPrompt && !hasCache) {
+                conceptData.cachedTechnicalPrompt = data.technicalPrompt;
+                console.log(`[Cache System] Техно-промпт успешно закэширован для карточки №${cardIndex}`);
+            }
+            // Обновляем изображение обложки
+            const img = document.getElementById('coverImg');
+            img.src = data.imageUrl;
+            img.style.display = 'block';
+            img.classList.add('visible');
+
+            // Выводим результат
+            const cacheStatus = hasCache ? "ИЗ КЭША ФРОНТЕНДА" : "СГЕНЕРИРОВАН С НУЛЯ";
+            document.getElementById('promptText').innerText = `Technical Prompt (${engine.toUpperCase()} | ${cacheStatus}): \n\n` + data.technicalPrompt;
+            // document.getElementById('coverImg').src = data.imageUrl;
+            document.getElementById('resultSection').style.display = 'block';
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+            
+        } catch (error) {
+            console.error(error);
+            if (engine === 'google') {
+                alert('НаноБанана от Google всё еще перегружена (503/429). \n\nПопробуй соседнюю кнопку "Poly" — она использует уже готовый промпт и сработает без очереди!');
+            } else {
+                alert('Произошла ошибка при генерации через Poly.');
+            }
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+</script>
+</body>
+</html>
