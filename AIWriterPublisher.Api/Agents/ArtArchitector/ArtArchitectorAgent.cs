@@ -110,10 +110,6 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
 
             try
             {
-                // Загружаем конфигурацию OpenAI-совместимого шлюза
-                // string baseUrl = _configuration["OpenAiCompatible:BaseUrl"] ?? "https://api.groq.com/openai/v1";
-                // string apiKey = _configuration["OpenAiCompatible:ApiKey"] ?? "";
-                // string modelName = _configuration["OpenAiCompatible:Model"] ?? "openai/gpt-oss-120b";
                 string baseUrl = _configuration["OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
                 string apiKey = _configuration["OpenRouter:ApiKey"] ?? "";
                 // string modelName = _configuration["OpenRouter:Model"] ?? "deepseek/deepseek-v4-flash:free";

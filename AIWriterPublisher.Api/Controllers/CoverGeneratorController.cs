@@ -4,7 +4,7 @@ using AIWriterPublisher.Api.Agents.PromptEngineer;
 using AIWriterPublisher.Api.Agents.ArtArchitector;
 using AIWriterPublisher.Api.Services;
 using AIWriterPublisher.Api.Models;
-using AIWriterPublisher.Api.Models.DTO; // Наш новый неймспейс с DTO
+using AIWriterPublisher.Api.Models.DTO; 
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -55,48 +55,12 @@ namespace AIWriterPublisher.Api.Controllers
             }
         }
 
-        // [HttpPost("generate")]
-        // public async Task<IActionResult> GenerateCover([FromBody] CoverGenerationRequest request)
-        // {
-        //     if (string.IsNullOrWhiteSpace(request.VisualElements))
-        //         return BadRequest("Визуальные элементы концепта не могут быть пустыми.");
-
-        //     try
-        //     {
-        //         // ПОЧИНЕНО: Генерируем технический промпт через агента на основе VisualElements из Request
-        //         //string finalPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(request.VisualElements, request.Genre);
-
-        //         string imageUrl = string.Empty;
-        //         if (request.Engine?.ToLower() == "pollinations")
-        //         {
-        //             string encodedPrompt = Uri.EscapeDataString(finalPrompt);
-        //             string polyUrl = $"https://image.pollinations.ai/p/{encodedPrompt}?width=512&height=768&nologo=true&seed={Random.Shared.Next(1, 999999)}";
-        //             byte[] imageBytes = await _httpClient.GetByteArrayAsync(polyUrl);
-        //             imageUrl = $"data:image/png;base64,{Convert.ToBase64String(imageBytes)}";
-        //         }
-        //         else
-        //         {
-        //             // Вызываем генератор (по умолчанию передаст дефолтный aspectRatio "2:3")
-        //             imageUrl = await _imageGenerator.GenerateImageAsync(finalPrompt);
-        //         }
-
-        //         return Ok(new CoverGenerationResponse { TechnicalPrompt = finalPrompt, ImageUrl = imageUrl });
-        //     }
-        //     catch (Exception ex)
-        //     {
-        //         return StatusCode(500, $"Ошибка при генерации обложки: {ex.Message}");
-        //     }
-        // }
-
         /// <summary>
-        /// ЭНДПОИНТ ДЛЯ РЕЖИМА «ТВОРЕЦ» (Direct Prompt)
-        /// Обрабатывает ручной ввод по слоям или парсит «Магический поток» через LLM,
-        /// после чего склеивает монолитное ТЗ и рендерит графику.
+        /// ЭНДПОИНТ ДЛЯ РЕЖИМА «ТВОРЕЦ» (Direct Prompt - С чистого листа)
         /// </summary>
         [HttpPost("direct-generate")]
         public async Task<IActionResult> DirectGenerate([FromBody] DirectGenerationRequest request)
         {
-            Console.WriteLine($"[Direct Engine] Запуск генерации. Режим: {request.Mode}");
             try
             {
                 string flatFluxPrompt;
@@ -104,19 +68,17 @@ namespace AIWriterPublisher.Api.Controllers
                 
                 TechnicalSpecDto finalSpec = request.TechnicalSpec ?? new TechnicalSpecDto();
                 Console.WriteLine($"[Direct Engine] Полученные слои ТЗ: Subject='{finalSpec.Subject}', Environment='{finalSpec.Environment}', StyleAndLight='{finalSpec.Style}', Composition='{finalSpec.Composition}'");
-                // РЕЖИМ 1: Магический поток (Требуется разбор строки на JSON-структуру)
+                
                 if (request.Mode == "raw-parse")
                 {
                     Console.WriteLine($"[Direct Engine] Режим «Магический поток» активирован. Запускаем парсер...");
                     if (string.IsNullOrWhiteSpace(request.RawPrompt))
                         return BadRequest("Промпт для распознавания не может быть пустым.");
 
-                    Console.WriteLine("[Direct Engine] Запуск ИИ-парсера для Магического потока...");
-
                     finalSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, request.RenderSettings?.Provider?.ToLower());
                     flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec);
                 }
-                else //Иначе режим 2: Строгие слои (Пользователь уже заполнил техническую структуру, просто используем её)
+                else 
                 {
                     Console.WriteLine("[Direct Engine] Режим «Строгие слои» активирован. Используем предоставленную структуру ТЗ.");
                     flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec);
@@ -124,24 +86,19 @@ namespace AIWriterPublisher.Api.Controllers
 
                 Console.WriteLine($"[Direct Engine] Итоговый плоский промпт для Flux: {flatFluxPrompt}");
 
-                // ВЫБОР ДВИЖКА РЕНДЕРА (На базе RenderSettings)
                 string base64Image = string.Empty;
                 string width = (request.RenderSettings?.Dimensions?.Width ?? 1024).ToString();
                 string height = (request.RenderSettings?.Dimensions?.Height ?? 1024).ToString();
 
-                // Определяем соотношение сторон для интерфейса IImageGenerator
                 string targetAspectRatio = "2:3";
                 if (width == "1024" && height == "1024") targetAspectRatio = "1:1";
                 else if (int.Parse(width) > int.Parse(height)) targetAspectRatio = "3:2";
 
-                // Проверяем, кто у нас провайдер в настройках рендера
                 if (request.RenderSettings?.Provider?.ToLower() == "huggingface")
                 {
                     Console.WriteLine("[Direct Engine] Выбран Hugging Face (Flux.1-dev). Вызываем выделенный метод...");
-                    
                     if (_imageGenerator is RealImageGenerator realGenerator)
                     {
-                        // base64Image = await realGenerator.GenerateFluxViaHuggingFaceAsync(flatFluxPrompt, width, height);
                         base64Image = await realGenerator.GenerateFluxViaPollinationsAsync(flatFluxPrompt, width, height);
                     }
                     else
@@ -151,21 +108,18 @@ namespace AIWriterPublisher.Api.Controllers
                 }
                 else
                 {
-                    Console.WriteLine("[Direct Engine] Выбран стандартный движок генерации проекта.");
-                    ComfyUiImageGenerator comfyGenerator = _imageGenerator as ComfyUiImageGenerator;
-                    if (comfyGenerator != null)
+                    Console.WriteLine("[Direct Engine] Выбран стандартный движок генерации проекта (ComfyUI).");
+                    if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
                     {
                         base64Image = await comfyGenerator.GenerateImageAsync(flatFluxPrompt, targetAspectRatio);
                     }
                 }
 
-                // Гарантируем, что строка уйдет на фронт с b64-префиксом, если сервис вернул чистую строку
                 if (!base64Image.StartsWith("data:") && !base64Image.StartsWith("http"))
                 {
                     base64Image = $"data:image/png;base64,{base64Image}";
                 }
 
-                // ФОРМИРУЕМ ОТВЕТ
                 var response = new DirectGenerationResponse
                 {
                     ImageBase64 = base64Image,
@@ -178,6 +132,79 @@ namespace AIWriterPublisher.Api.Controllers
             {
                 Console.WriteLine($"[Direct Error] Крах эндпоинта: {ex.Message}");
                 return StatusCode(500, new { error = $"Ошибка Direct-генерации: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// РЕЖИМ Z-IMAGE: Эндпоинт точечного редактирования обложки по референсу (Img2Img)
+        /// Принимает базовое изображение в Base64, силу изменений (denoise) и текстовое описание правок.
+        /// </summary>
+        [HttpPost("edit-reference")]
+        public async Task<IActionResult> EditWithReference([FromBody] DirectGenerationRequest request)
+        {
+            Console.WriteLine("[Z-Image Engine] Получен запрос на редактирование по референсу.");
+
+            if (string.IsNullOrWhiteSpace(request.BaseImageBase64))
+            {
+                return BadRequest(new { error = "Для редактирования необходимо передать базовое изображение в формате Base64 (BaseImageBase64)." });
+            }
+
+            try
+            {
+                // 1. Формируем промпт изменений (извлекаем из слоев или сырого текста)
+                string modificationPrompt = string.Empty;
+
+                if (request.Mode == "raw-parse" && !string.IsNullOrWhiteSpace(request.RawPrompt))
+                {
+                    // Если Катя ввела "Убери кота и сделай небо багровым" в свободном стиле
+                    var parsedSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, "comfyui");
+                    modificationPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(parsedSpec);
+                }
+                else
+                {
+                    // Если правки переданы четко структурировано в TechnicalSpec
+                    TechnicalSpecDto spec = request.TechnicalSpec ?? new TechnicalSpecDto();
+                    modificationPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(spec);
+                }
+
+                if (string.IsNullOrWhiteSpace(modificationPrompt))
+                {
+                    return BadRequest(new { error = "Промпт изменений (описание того, что перерисовать) не может быть пустым." });
+                }
+
+                Console.WriteLine($"[Z-Image Engine] Итоговый промпт правок: {modificationPrompt}");
+
+                // 2. Достаем денойз из настроек (дефолт 0.35 из Манифеста 0.3)
+                double denoise = request.DenoisingStrength ?? 0.35;
+                Console.WriteLine($"[Z-Image Engine] Сила денойза: {denoise}");
+
+                // 3. Вызываем локальный ComfyUI генератор через приведение типов
+                if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
+                {
+                    Console.WriteLine("[Z-Image Engine] Передаем управление в ComfyUiImageGenerator...");
+                    string resultBase64 = await comfyGenerator.EditImageWithReferenceAsync(modificationPrompt, request.BaseImageBase64, denoise);
+
+                    // Гарантируем префикс для корректного отображения на HTML5 Canvas
+                    if (!resultBase64.StartsWith("data:") && !resultBase64.StartsWith("http"))
+                    {
+                        resultBase64 = $"data:image/png;base64,{resultBase64}";
+                    }
+
+                    return Ok(new DirectGenerationResponse 
+                    { 
+                        ImageBase64 = resultBase64,
+                        ParsedSpec = request.Mode == "raw-parse" ? request.TechnicalSpec : null
+                    });
+                }
+                else
+                {
+                    return StatusCode(501, new { error = "Режим Z-Image (Img2Img) поддерживается только локальным движком ComfyUI. Проверьте конфигурацию DI." });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Z-Image Error] Крах эндпоинта правок: {ex.Message}");
+                return StatusCode(500, new { error = $"Ошибка при редактировании по референсу: {ex.Message}" });
             }
         }
         /// <summary>

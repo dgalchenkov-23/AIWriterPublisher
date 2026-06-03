@@ -2,19 +2,14 @@ using System.Text.Json.Serialization;
 
 namespace AIWriterPublisher.Api.Models.DTO;
 
-public sealed class DirectGenerationRequest
+public class DirectGenerationRequest
 {
-    // "self-prompt" (строгие слои) или "raw-parse" (магический поток)
-    [JsonPropertyName("mode")]
-    public string Mode { get; set; } = "self-prompt";
-
-    // Заполняется только для режима "raw-parse"
-    [JsonPropertyName("rawPrompt")]
+    public string? Mode { get; set; } // "raw-parse" или "layers"
     public string? RawPrompt { get; set; }
-
-    [JsonPropertyName("technicalSpec")]
     public TechnicalSpecDto? TechnicalSpec { get; set; }
-
-    [JsonPropertyName("render_settings")]
     public RenderSettingsDto? RenderSettings { get; set; }
+    
+    // Новые поля для сквозной поддержки Img2Img, если Катя редактирует прямо внутри пульта
+    public string? BaseImageBase64 { get; set; } 
+    public double? DenoisingStrength { get; set; }
 }
