@@ -2,3 +2,12 @@ node_modules
 dist
 *.local
 .DS_Store
+**/bin/
+**/obj/
+**/covers/
+*.exe
+*.dll
+*.pdb
+*.zip
+**/appsettings.Development.json
+**/appsettings.Production.json
