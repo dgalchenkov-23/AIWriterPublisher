@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -27,15 +28,13 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
     public async Task<string> GenerateImageAsync(string technicalPrompt, string aspectRatio = "2:3")
     {
-        // Маппим привычные Кате пропорции обложки в пиксели, которые понимает Flux.1-dev
-        // Базируемся на золотом стандарте ~1 мегапиксель для Flux
         string width = "1024";
         string height = "1024";
 
         if (aspectRatio == "2:3")
         {
             width = "832";
-            height = "1248"; // Идеальное вертикальное разрешение под книжную обложку
+            height = "1248";
         }
         else if (aspectRatio == "3:2")
         {
@@ -48,160 +47,162 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             height = "768";
         }
 
-        // Вызываем наш прямой enterprise-пайплайн к Hugging Face
-        // return await GenerateFluxViaHuggingFaceAsync(technicalPrompt, width, height);
         return await GenerateEventHorizonAsync(technicalPrompt, "");
     }
 
-    
+    /// <summary>
+    /// Загружает изображение на сервер ComfyUI (эндпоинт /upload/image)
+    /// </summary>
+    /// <param name="imageBase64">Строка изображения в формате Base64 (с префиксом data:image/... или без)</param>
+    /// <returns>Имя файла, сохраненное в папке input внутри ComfyUI</returns>
+    private async Task<string> UploadImageToComfyUiAsync(string imageBase64)
+    {
+        _logger.LogInformation("Подготовка к отправке референса в ComfyUI...");
+
+        // Очищаем префикс Base64, если он прилетел с фронта
+        if (imageBase64.Contains(","))
+        {
+            imageBase64 = imageBase64.Split(',')[1];
+        }
+
+        byte[] imageBytes = Convert.FromBase64String(imageBase64);
+        string tempFileName = $"ref_{Guid.NewGuid():N}.png";
+
+        using var content = new MultipartFormDataContent();
+        var imageContent = new ByteArrayContent(imageBytes);
+        imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
+        
+        // ComfyUI жестко требует поле "image" в multipart форме
+        content.Add(imageContent, "image", tempFileName);
+        // Флаг перезаписи, если файл с таким именем существует
+        content.Add(new StringContent("true"), "overwrite");
+
+        var response = await _httpClient.PostAsync($"{ComfyUrl}/upload/image", content);
+        response.EnsureSuccessStatusCode();
+
+        string jsonResult = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(jsonResult);
+        
+        if (doc.RootElement.TryGetProperty("name", out var nameProp))
+        {
+            string serverFileName = nameProp.GetString() ?? tempFileName;
+            _logger.LogInformation("Референс успешно загружен в ComfyUI под именем: {Name}", serverFileName);
+            return serverFileName;
+        }
+
+        throw new InvalidOperationException("ComfyUI успешно принял файл, но не вернул его внутреннее имя.");
+    }
+
+    /// <summary>
+    /// РЕЖИМ Z-IMAGE: Генерация на основе референса (Img2Img / Inpainting)
+    /// </summary>
+    /// <param name="positivePrompt">Уточняющий промпт для изменений</param>
+    /// <param name="baseImageBase64">Исходная обложка в формате Base64</param>
+    /// <param name="denoisingStrength">Сила изменений (0.0 - копия, 1.0 - полная перерисовка). Из Манифеста 0.3 дефолт: 0.35</param>
+    public async Task<string> EditImageWithReferenceAsync(string positivePrompt, string baseImageBase64, double denoisingStrength = 0.35)
+    {
+        try
+        {
+            // Проверяем доступность ComfyUI
+            await CheckComfyUiHealthAsync();
+
+            // 1. Первым делом загружаем картинку-донор в ComfyUI
+            string uploadedFileName = await UploadImageToComfyUiAsync(baseImageBase64);
+
+            // 2. Загружаем шаблон workflow для редактирования
+            // Для Img2Img нужен граф, содержащий ноду LoadImage и KSampler со входом latent от VAE Encode!
+            string workflowPath = Path.Combine(AppContext.BaseDirectory, "EventHorizon_Img2Img.json");
+            if (!File.Exists(workflowPath))
+            {
+                throw new FileNotFoundException($"Шаблон графа для Img2Img не найден по пути: {workflowPath}. Выгрузи API JSON с нодой LoadImage!");
+            }
+
+            string workflowJson = await File.ReadAllTextAsync(workflowPath);
+            var graph = JsonNode.Parse(workflowJson)?.AsObject();
+            if (graph == null) throw new InvalidOperationException("Не удалось распарсить JSON графа Img2Img.");
+
+            // 3. Инжектируем имя файла в ноду LoadImage (Допустим, её ID в графе = "10")
+            string loadImageNodeId = "10";
+            if (graph.TryGetPropertyValue(loadImageNodeId, out var loadNode) && loadNode?["inputs"] is JsonObject loadInputs)
+            {
+                loadInputs["image"] = uploadedFileName;
+                _logger.LogInformation("Имя файла {File} успешно внедрено в ноду LoadImage ({Id})", uploadedFileName, loadImageNodeId);
+            }
+            else
+            {
+                _logger.LogWarning("Нода {Id} (LoadImage) не найдена в графе! Проверь EventHorizon_Img2Img.json", loadImageNodeId);
+            }
+
+            // 4. Инжектируем силу изменения (denoising_strength) в KSampler (Допустим, его ID = "3")
+            string kSamplerNodeId = "3";
+            if (graph.TryGetPropertyValue(kSamplerNodeId, out var samplerNode) && samplerNode?["inputs"] is JsonObject samplerInputs)
+            {
+                samplerInputs["denoise"] = denoisingStrength;
+                _logger.LogInformation("Сила денойза {Denoise} успешно внедрена в KSampler ({Id})", denoisingStrength, kSamplerNodeId);
+            }
+
+            // 5. Инжектируем новый позитивный промпт (Допустим, CLIPTextEncode имеет ID = "6")
+            string positiveNodeId = "6"; 
+            if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)
+            {
+                posInputs["text"] = positivePrompt;
+                _logger.LogInformation("Промпт точечной редактуры внедрен в ноду {Id}", positiveNodeId);
+            }
+
+            // 6. Отправляем в очередь выполнения
+            var requestBody = new JsonObject { ["prompt"] = graph };
+            var response = await _httpClient.PostAsJsonAsync($"{ComfyUrl}/prompt", requestBody);
+            response.EnsureSuccessStatusCode();
+
+            string jsonResponse = await response.Content.ReadAsStringAsync();
+            var queueResult = JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (queueResult == null || string.IsNullOrEmpty(queueResult.PromptId))
+                throw new Exception("ComfyUI не вернул PromptId задачи.");
+
+            // 7. Поллинг и скачивание (используем твою отлаженную логику)
+            return await PollAndDownloadResultAsync(queueResult.PromptId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Критическая ошибка в режиме редактирования Z-Image (Img2Img)");
+            throw;
+        }
+    }
 
     public async Task<string> GenerateEventHorizonAsync(string positivePrompt, string negativePrompt)
     {
         try
         {
-            // 1. Загружаем сохраненный API-граф (шаблон workflow)
-            // Файл должен лежать в корне проекта или в App_Data/flux_schnell_api.json
             string workflowPath = Path.Combine(AppContext.BaseDirectory, "EventHorizon.json");
             if (!File.Exists(workflowPath))
             {
-                throw new FileNotFoundException($"Шаблон графа ComfyUI не найден по пути: {workflowPath}. Выгрузи его из UI в формате API JSON!");
+                throw new FileNotFoundException($"Шаблон графа ComfyUI не найден: {workflowPath}");
             }
 
             string workflowJson = await File.ReadAllTextAsync(workflowPath);
             var graph = JsonNode.Parse(workflowJson)?.AsObject();
+            if (graph == null) throw new InvalidOperationException("Не удалось распарсить JSON.");
 
-            if (graph == null)
-                throw new InvalidOperationException("Не удалось распарсить JSON графа ComfyUI.");
-
-            // 2. Инжектируем промпты в правильные ноды графа.
-            // ВНИМАНИЕ: Проверь ID нод в твоем сохраненном JSON! 
-            // Обычно во Flux нода текста — это CLIPTextEncode. Допустим, её ID = "6"
-            
-            // Навешиваем позитивный промпт
             string positiveNodeId = "6"; 
             if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)
             {
                 posInputs["text"] = positivePrompt;
-                _logger.LogInformation("Позитивный промпт успешно внедрен в ноду {Id}", positiveNodeId);
-            }
-            else
-            {
-                // Лог-предупреждение, если ID отличается (например, используется другой кастомный граф)
-                _logger.LogWarning("Нода {Id} для позитивного текста не найдена в графе! Проверь EventHorizon.json", positiveNodeId);
             }
 
-            // 3. Собираем финальное тело запроса. 
-            // ComfyUI ждет JSON, где граф обернут в свойство "prompt"
-            var requestBody = new JsonObject
-            {
-                ["prompt"] = graph
-            };
+            await CheckComfyUiHealthAsync();
 
-            // Проверяем, жив ли ComfyUI
-            try
-            {
-                var pingResponse = await _httpClient.GetAsync($"{ComfyUrl}/");
-                if (!pingResponse.IsSuccessStatusCode)
-                {
-                    _logger.LogError("ComfyUI недоступен. Код: {StatusCode}", pingResponse.StatusCode);
-                    throw new Exception("ComfyUI не отвечает. Запусти run_nvidia_gpu.bat");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ComfyUI не отвечает по адресу {Url}", ComfyUrl);
-                throw;
-            }
-
-            // 4. Пушим задачу в очередь ComfyUI (POST /prompt)
+            var requestBody = new JsonObject { ["prompt"] = graph };
             var response = await _httpClient.PostAsJsonAsync($"{ComfyUrl}/prompt", requestBody);
             response.EnsureSuccessStatusCode();
 
             string jsonResponse = await response.Content.ReadAsStringAsync();
-            var queueResult = System.Text.Json.JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true // Учитываем регистр для полей типа 'prompt_id' в JSON
-            });
-            if (queueResult == null || string.IsNullOrEmpty(queueResult.PromptId))
-            {
-                throw new Exception("ComfyUI не вернул PromptId задачи.");
-            }
-
-            string promptId = queueResult.PromptId;
-            _logger.LogInformation("Задача успешно добавлена в очередь ComfyUI. Prompt ID: {Id}", promptId);
-
-            // 5. Поллинг (Опрос готовности). Проверяем статус задачи через GET /history/{promptId}
-            string? fileName = null;
-            string? subFolder = null;
-            bool isCompleted = false;
-            int maxAttempts = 120; // 120 попыток по 2 секунды = 4 минуты таймаута
-
-            for (int i = 0; i < maxAttempts; i++)
-            {
-                await Task.Delay(2000); // Ждем 2 секунды перед проверкой
-
-                var historyResponse = await _httpClient.GetAsync($"{ComfyUrl}/history/{promptId}");
-                if (!historyResponse.IsSuccessStatusCode) continue;
-
-                string historyJson = await historyResponse.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(historyJson);
-                
-                // Если в корневом объекте истории появился наш promptId, значит генерация завершена
-                if (doc.RootElement.TryGetProperty(promptId, out var taskDetails))
-                {
-                    _logger.LogInformation("Генерация в ComfyUI завершена! Извлекаем файлы...");
-                    
-                    // Пробиваемся сквозь дебри JSON ответов истории к ноде сохранения (обычно SaveImage, ID = "9")
-                    // Структура: [promptId] -> outputs -> [nodeId] -> images -> [0] -> filename
-                    if (taskDetails.TryGetProperty("outputs", out var outputs))
-                    {
-                        foreach (var nodeOutput in outputs.EnumerateObject())
-                        {
-                            if (nodeOutput.Value.TryGetProperty("images", out var images) && images.GetArrayLength() > 0)
-                            {
-                                var firstImage = images[0];
-                                fileName = firstImage.GetProperty("filename").GetString();
-                                if (firstImage.TryGetProperty("subfolder", out var subProp))
-                                {
-                                    subFolder = subProp.GetString();
-                                }
-                                isCompleted = true;
-                                break;
-                            }
-                        }
-                    }
-                    break;
-                }
-            }
-
-            if (!isCompleted || string.IsNullOrEmpty(fileName))
-            {
-                throw new TimeoutException("Превышено время ожидания генерации локальной модели в ComfyUI.");
-            }
-
-            // 6. Скачиваем готовую картинку через эндпоинт /view
-            string viewUrl = $"{ComfyUrl}/view?filename={Uri.EscapeDataString(fileName)}&type=output";
-            if (!string.IsNullOrEmpty(subFolder))
-            {
-                viewUrl += $"&subfolder={Uri.EscapeDataString(subFolder)}";
-            }
-
-            byte[] imageBytes = await _httpClient.GetByteArrayAsync(viewUrl);
-            _logger.LogInformation("Бинарник изображения успешно скачан из ComfyUI. Размер: {Size} байт", imageBytes.Length);
-
-            // 7. Сохраняем в локальные ассеты проекта (согласно разделу 5 Манифеста 0.3)
-            string outputDirectory = Path.Combine(AppContext.BaseDirectory, "covers");
-            if (!Directory.Exists(outputDirectory))
-            {
-                Directory.CreateDirectory(outputDirectory);
-            }
-
-            string localPath = Path.Combine(outputDirectory, $"{promptId}.png");
-            await File.WriteAllBytesAsync(localPath, imageBytes);
-            _logger.LogInformation("Файл сохранен локально: {Path}", localPath);
-
-            // 8. Возвращаем стандартную Base64 строку для мгновенного отображения у Кати на фронте
-            return $"data:image/jpeg;base64,{Convert.ToBase64String(imageBytes)}";
+            var queueResult = JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            
+            return await PollAndDownloadResultAsync(queueResult!.PromptId);
         }
         catch (Exception ex)
         {
@@ -209,4 +210,93 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             throw;
         }
     }
+
+    private async Task CheckComfyUiHealthAsync()
+    {
+        try
+        {
+            var pingResponse = await _httpClient.GetAsync($"{ComfyUrl}/");
+            if (!pingResponse.IsSuccessStatusCode)
+            {
+                throw new Exception($"ComfyUI недоступен. Код: {pingResponse.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ComfyUI не отвечает по адресу {Url}", ComfyUrl);
+            throw new Exception("ComfyUI не отвечает. Запусти run_nvidia_gpu.bat", ex);
+        }
+    }
+
+    private async Task<string> PollAndDownloadResultAsync(string promptId)
+    {
+        string? fileName = null;
+        string? subFolder = null;
+        bool isCompleted = false;
+        int maxAttempts = 120; 
+
+        for (int i = 0; i < maxAttempts; i++)
+        {
+            await Task.Delay(2000); 
+
+            var historyResponse = await _httpClient.GetAsync($"{ComfyUrl}/history/{promptId}");
+            if (!historyResponse.IsSuccessStatusCode) continue;
+
+            string historyJson = await historyResponse.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(historyJson);
+            
+            if (doc.RootElement.TryGetProperty(promptId, out var taskDetails))
+            {
+                _logger.LogInformation("Генерация в ComfyUI завершена! Извлекаем файлы...");
+                
+                if (taskDetails.TryGetProperty("outputs", out var outputs))
+                {
+                    foreach (var nodeOutput in outputs.EnumerateObject())
+                    {
+                        if (nodeOutput.Value.TryGetProperty("images", out var images) && images.GetArrayLength() > 0)
+                        {
+                            var firstImage = images[0];
+                            fileName = firstImage.GetProperty("filename").GetString();
+                            if (firstImage.TryGetProperty("subfolder", out var subProp))
+                            {
+                                subFolder = subProp.GetString();
+                            }
+                            isCompleted = true;
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        if (!isCompleted || string.IsNullOrEmpty(fileName))
+        {
+            throw new TimeoutException("Превышено время ожидания генерации локальной модели в ComfyUI.");
+        }
+
+        string viewUrl = $"{ComfyUrl}/view?filename={Uri.EscapeDataString(fileName)}&type=output";
+        if (!string.IsNullOrEmpty(subFolder))
+        {
+            viewUrl += $"&subfolder={Uri.EscapeDataString(subFolder)}";
+        }
+
+        byte[] imageBytes = await _httpClient.GetByteArrayAsync(viewUrl);
+        
+        string outputDirectory = Path.Combine(AppContext.BaseDirectory, "covers");
+        if (!Directory.Exists(outputDirectory)) Directory.CreateDirectory(outputDirectory);
+
+        string localPath = Path.Combine(outputDirectory, $"{promptId}.png");
+        await File.WriteAllBytesAsync(localPath, imageBytes);
+        _logger.LogInformation("Файл сохранен локально: {Path}", localPath);
+
+        return $"data:image/jpeg;base64,{Convert.ToBase64String(imageBytes)}";
+    }
+}
+
+// Вспомогательный DTO класс для десериализации ответа очереди
+public class ComfyQueueResponse
+{
+    [System.Text.Json.Serialization.JsonPropertyName("prompt_id")]
+    public string PromptId { get; set; } = string.Empty;
 }

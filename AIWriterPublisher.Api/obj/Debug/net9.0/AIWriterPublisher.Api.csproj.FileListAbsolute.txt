@@ -70,3 +70,4 @@ C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.Api\bin\Debug\
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.Api\bin\Debug\net9.0\google_models.json
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.Api\obj\Debug\net9.0\compressed\i3wkg413p8-lrjriz0aeu.gz
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.Api\bin\Debug\net9.0\EventHorizon.json
+C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.Api\obj\Debug\net9.0\AIWriterPublisher.Api.sourcelink.json
