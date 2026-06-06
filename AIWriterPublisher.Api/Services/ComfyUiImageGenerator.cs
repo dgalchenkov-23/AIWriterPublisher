@@ -10,6 +10,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using AIWriterPublisher.Api.Models.DTO; 
+using System.Collections.Generic;
+using System.Linq;
+using Newtonsoft.Json.Linq;
 
 namespace AIWriterPublisher.Api.Services;
 
@@ -48,6 +51,139 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         }
 
         return await GenerateEventHorizonAsync(technicalPrompt, "");
+    }
+
+    public class LoraConfig
+    {
+        public string LoraName { get; set; }
+        public double StrengthModel { get; set; } = 1.0;
+        public double StrengthClip { get; set; } = 1.0;
+    }
+
+    public class ComfyUiGraphOrchestrator
+    {
+        public string InjectLoraChainIntoGraph(string jsonGraph, List<LoraConfig> lorasToInject)
+        {
+            var graph = JObject.Parse(jsonGraph);
+            // 1. Динамически определяем базовые источники, читая их из ноды "12", пока она жива
+            JArray baseModelInput;
+            JArray baseClipInput;
+
+            if (graph["12"] != null && graph["12"]["inputs"] != null)
+            {
+                // Берём оригинальные линки, которые были прописаны в шаблоне
+                baseModelInput = (JArray)graph["12"]["inputs"]["model"];
+                baseClipInput = (JArray)graph["12"]["inputs"]["clip"];
+            }
+            else
+            {
+                // Резервный фолбэк на случай, если ноду 12 уже кто-то стер, но мы знаем дефолты
+                baseModelInput = new JArray { "4", 0 };
+                baseClipInput = new JArray { "10", 0 };
+            }
+
+            // 2. Определяем, куда шел выход из последней дефолтной LoRA (ноды "13")
+            // Нам нужно найти ноду, которая потребляла ["13", 0] и ["13", 1]
+            string targetNodeIdForModel = null;
+            string targetModelKey = null;
+            string targetNodeIdForClip = null;
+            string targetClipKey = null;
+
+            foreach (var property in graph.Properties())
+            {
+                var node = property.Value as JObject;
+                if (node == null || node["inputs"] == null) continue;
+
+                foreach (var inputProp in ((JObject)node["inputs"]).Properties())
+                {
+                    if (inputProp.Value.Type == JTokenType.Array)
+                    {
+                        var link = (JArray)inputProp.Value;
+                        if (link.Count == 2)
+                        {
+                            if (link[0].ToString() == "13" && link[1].Value<int>() == 0)
+                            {
+                                targetNodeIdForModel = property.Name;
+                                targetModelKey = inputProp.Name;
+                            }
+                            if (link[0].ToString() == "13" && link[1].Value<int>() == 1)
+                            {
+                                targetNodeIdForClip = property.Name;
+                                targetClipKey = inputProp.Name;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Если не нашли куда шла 13-я нода, значит граф изменен, бросаем исключение
+            if (targetNodeIdForModel == null || targetNodeIdForClip == null)
+            {
+                throw new Exception("Не удалось найти конечные узлы-потребители для дефолтной LoRA цепочки (нода 13).");
+            }
+
+            // 3. Удаляем старые жестко зашитые ноды 12 и 13, чтобы они не мусорили
+            graph.Remove("12");
+            graph.Remove("13");
+
+            // Если пользователь не выбрал ни одной LoRA, соединяем напрямую базы с таргетами
+            if (lorasToInject == null || lorasToInject.Count == 0)
+            {
+                graph[targetNodeIdForModel]["inputs"][targetModelKey] = baseModelInput;
+                graph[targetNodeIdForClip]["inputs"][targetClipKey] = baseClipInput;
+                return graph.ToString();
+            }
+
+            // 4. Вычисляем стартовый ID для новых нод
+            int currentMaxId = graph.Properties()
+                .Select(p => int.TryParse(p.Name, out int id) ? id : 0)
+                .Max();
+
+            int nextNodeId = currentMaxId + 1;
+
+            // Переменные для отслеживания текущего "хвоста" линковки
+            JArray currentModelLink = baseModelInput;
+            JArray currentClipLink = baseClipInput;
+
+            // 5. Динамически строим цепочку LoRA
+            for (int i = 0; i < lorasToInject.Count; i++)
+            {
+                var lora = lorasToInject[i];
+                string newLoraNodeId = nextNodeId.ToString();
+                nextNodeId++;
+
+                // Создаем JSON-структуру для ноды LoraLoader
+                var loraNode = new JObject
+                {
+                    ["inputs"] = new JObject
+                    {
+                        ["lora_name"] = lora.LoraName,
+                        ["strength_model"] = lora.StrengthModel,
+                        ["strength_clip"] = lora.StrengthClip,
+                        ["model"] = currentModelLink, // Подключаем к предыдущему звену
+                        ["clip"] = currentClipLink    // Подключаем к предыдущему звену
+                    },
+                    ["class_type"] = "LoraLoader",
+                    ["_meta"] = new JObject
+                    {
+                        ["title"] = $"Динамическая LoRA {i + 1}: {lora.LoraName}"
+                    }
+                };
+
+                // Добавляем ноду в граф
+                graph[newLoraNodeId] = loraNode;
+
+                // Теперь это звено становится "источником" для следующего шага
+                currentModelLink = new JArray { newLoraNodeId, 0 };
+                currentClipLink = new JArray { newLoraNodeId, 1 };
+            }
+
+            // 6. Замыкаем цепочку: подключаем выходы последней созданной LoRA к таргетам
+            graph[targetNodeIdForModel]["inputs"][targetModelKey] = currentModelLink;
+            graph[targetNodeIdForClip]["inputs"][targetClipKey] = currentClipLink;
+
+            return graph.ToString();
+        }
     }
 
     /// <summary>
@@ -184,8 +320,24 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             }
 
             string workflowJson = await File.ReadAllTextAsync(workflowPath);
+            
             var graph = JsonNode.Parse(workflowJson)?.AsObject();
             if (graph == null) throw new InvalidOperationException("Не удалось распарсить JSON.");
+
+            var loraSpec = request.ComfyUiImg2ImgSpec.LoraSettings;
+            var resolvedLora = _loraOrchestrator.ResolveLora(request.Genre, loraSpec.Mode, loraSpec.CustomLoraName);
+
+            if (!string.IsNullOrEmpty(resolvedLora.FileName))
+            {
+                // Динамически перебиваем параметры ноды LoraLoader в JSON-шаблоне графа ComfyUI
+                comfyGraphJson["12"]["inputs"]["lora_name"] = resolvedLora.FileName;
+                comfyGraphJson["12"]["inputs"]["strength_model"] = loraSpec.AppliedWeight > 0 ? loraSpec.AppliedWeight : resolvedLora.DefaultWeight;
+            }
+            else
+            {
+                // Если LoRA не нужна, пускаем связь в обход или ставим вес 0
+                comfyGraphJson["12"]["inputs"]["strength_model"] = 0.0;
+            }
 
             string positiveNodeId = "6"; 
             if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)

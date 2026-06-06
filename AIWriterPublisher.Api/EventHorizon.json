@@ -1,14 +1,14 @@
 {
   "3": {
     "inputs": {
-      "seed": 119486474514552,
-      "steps": 8,
+      "seed": 463633649597141,
+      "steps": 14,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
       "denoise": 1,
       "model": [
-        "4",
+        "13",
         0
       ],
       "positive": [
@@ -51,10 +51,10 @@
   },
   "6": {
     "inputs": {
-      "text": "Detailed oil painting of two aristocratic young women inside a vintage 1900s train coupe, mystical atmosphere. On the left: a woman with voluminous curly black hair, wearing a dark blue patterned velvet dress with a white fur collar and a black feathered hat. On the right: a pale woman with long wavy brown hair, freckles, wearing a mustard-yellow dress and a brown hat, a fur coat draped over her shoulders. In front of them on a wooden table sits a glowing crystal ball and a fluffy black cat with bright yellow eyes. Dim warm overhead lighting, mysterious mood, rich textures of velvet and fur, cinematic composition, dark gothic fantasy style, masterpiece, 8k resolution.",
+      "text": "A weathered and torn teddy bear with an asymmetric face, one ear torn off with exposed stuffing, a single mismatched plastic button serving as its left eye, coarse worn fabric texture, sitting on a dusty wooden floor, inside a dark abandoned children's bedroom, broken toys in the background, visible shafts of cold moonlight cutting through a cracked window pane, close-up shot, shallow depth of field, sharp focus on the bear's texture, gritty cinematic film still, harsh chiaroscuro lighting, deep shadows, dark atmosphere, low key lighting, desaturated colors, gloomy mood, eerie, unsettling, grim",
       "clip": [
-        "10",
-        0
+        "13",
+        1
       ]
     },
     "class_type": "CLIPTextEncode",
@@ -122,6 +122,44 @@
     "class_type": "VAELoader",
     "_meta": {
       "title": "Загрузить VAE"
+    }
+  },
+  "12": {
+    "inputs": {
+      "lora_name": "Z-Aesthetic-Pro-v1_15.safetensors",
+      "strength_model": 0.9,
+      "strength_clip": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Загрузить LoRA"
+    }
+  },
+  "13": {
+    "inputs": {
+      "lora_name": "better_images_loraholic.safetensors",
+      "strength_model": 0.7,
+      "strength_clip": 1,
+      "model": [
+        "12",
+        0
+      ],
+      "clip": [
+        "12",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Загрузить LoRA"
     }
   }
 }

@@ -1,0 +1,31 @@
+{
+  "global_enhancement": [
+    { "file": "better_images_loraholic.safetensors", "weight": 0.5 },
+    { "file": "Captions-V1-ZIT.safetensors", "weight": 0.4 },
+    { "file": "Cinematic Slider - Stackable.safetensors", "weight": 0.5 },
+    { "file": "Z-Aesthetic-Pro-v1_15.safetensors", "weight": 0.4 },
+    { "file": "Trending25_epoch_10.safetensors", "weight": 0.3 }
+  ],
+  "style_presets": {
+    "ink_art": {
+      "display_name": "Графический нуар",
+      "loras": [
+        { "file": "ZIT-InkStorm-Mk.1.safetensors", "weight": 0.8 },
+        { "file": "Zit-Isometric Ink V2.safetensors", "weight": 0.6 }
+      ]
+    },
+    "neon_surreal": {
+      "display_name": "Неоновый сюрреализм",
+      "loras": [
+        { "file": "Promising Neon Surrealism (PSY).safetensors", "weight": 0.8 },
+        { "file": "ZIT Promising Neon Gloss.safetensors", "weight": 0.7 }
+      ]
+    },
+    "mecha_sci_fi": {
+      "display_name": "Кибер-Меха",
+      "loras": [
+        { "file": "ZImage-Cyber-Mecha-Starship-lora-2870.safetensors", "weight": 0.9 }
+      ]
+    }
+  }
+}
