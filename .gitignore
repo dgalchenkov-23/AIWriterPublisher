@@ -10,7 +10,7 @@ dist
 *.pdb
 *.zip
 **/bin/
-**/obj/
+**/obj/git add .gitignore
 *.local
 *.secret
 *.token
