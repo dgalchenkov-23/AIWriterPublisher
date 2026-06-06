@@ -11,3 +11,12 @@ dist
 *.zip
 **/appsettings.Development.json
 **/appsettings.Production.json
+**/bin/
+**/obj/
+**/appsettings.Development.json
+**/appsettings.Production.json
+*.local
+*.secret
+*.token
+*.key
+*.pem
