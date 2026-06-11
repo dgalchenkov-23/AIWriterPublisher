@@ -1,5 +1,12 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using AIWriterPublisher.Api.Models;
 using AIWriterPublisher.Api.Models.DTO;
+using AIWriterPublisher.Api.Agents.LoraAgent;
 
 namespace AIWriterPublisher.Api.Services;
 
@@ -11,47 +18,86 @@ public interface ILoraOrchestrationService
 
 public class LoraOrchestrationService : ILoraOrchestrationService
 {
-    private readonly ILogger<LoraOrchestrationService> _logger;
+    private readonly LoraPredictorAgent _aiAgent;
+    private readonly List<LoraDefinition> _allLoras;
 
-    // Статическая карта соответствия жанров и реальных LoRA на диске
-    private static readonly Dictionary<string, LoraPreset> GenreLoraMap = new(StringComparer.OrdinalIgnoreCase)
+    public LoraOrchestrationService(LoraPredictorAgent aiAgent)
     {
-        { "fantasy", new LoraPreset { DisplayName = "Высокое Фэнтези (Детализация)", FileName = "flux_fantasy_v1.safetensors", DefaultWeight = 0.8 } },
-        { "dark_fantasy", new LoraPreset { DisplayName = "Мрачная Готика", FileName = "dark_cinematic_photo.safetensors", DefaultWeight = 0.75 } },
-        { "cyberpunk", new LoraPreset { DisplayName = "Киберпанк & Неон", FileName = "flux_neon_cyber.safetensors", DefaultWeight = 0.7 } },
-        { "sci_fi", new LoraPreset { DisplayName = "Космическая Одиссея", FileName = "hard_scifi_spaceships.safetensors", DefaultWeight = 0.85 } },
-        { "romance", new LoraPreset { DisplayName = "Акварельная Романтика", FileName = "soft_watercolor_mix.safetensors", DefaultWeight = 0.65 } }
-    };
-
-    public LoraOrchestrationService(ILogger<LoraOrchestrationService> _logger)
-    {
-        this._logger = _logger;
+        _aiAgent = aiAgent;
+        
+        // Загружаем манифест из файла один раз при старте
+        string path = Path.Combine(AppContext.BaseDirectory, "lora_manifest.json");
+        if (File.Exists(path))
+        {
+            string json = File.ReadAllText(path);
+            var root = JsonSerializer.Deserialize<LoraRootManifest>(json);
+            _allLoras = root?.AvailableLoras ?? new List<LoraDefinition>();
+        }
+        else
+        {
+            _allLoras = new List<LoraDefinition>(); // фолбэк, если файла нет
+        }
     }
 
-    public Dictionary<string, LoraPreset> GetAvailablePresets() => GenreLoraMap;
-
-    public LoraPreset ResolveLora(string genre, string mode, string customLoraName)
+    public async Task<List<LoraPreset>> PrepareLorasForGenerationAsync(string currentGenre, TechnicalSpecDto spec)
     {
-        // 1. Ручной режим: если пользователь явно ткнул в пресет стиля
-        if (mode == "custom" && !string.IsNullOrEmpty(customLoraName))
+        // 1. Фильтруем Лоры для конкретного жанра Кати, чтобы сберечь контекст ИИ
+        var filteredLorasForAi = _allLoras.Where(l => 
+            l.Category == "Enhancer" || 
+            l.ApplicableGenres.Contains("All") || 
+            l.ApplicableGenres.Contains(currentGenre, StringComparer.OrdinalIgnoreCase)
+        ).ToList();
+
+        // 2. Мапим наши внутренние LoraDefinition в облегченные LoraPreset для ИИ-агента
+        var lorasForAgent = filteredLorasForAi.Select(l => new LoraPreset
         {
-            var preset = GenreLoraMap.Values.FirstOrDefault(p => p.DisplayName.Equals(customLoraName, StringComparison.OrdinalIgnoreCase));
-            if (preset != null)
+            DisplayName = l.DisplayName,
+            FileName = l.FileName,
+            DefaultWeight = l.DefaultWeight
+            // Тут можно расширить DTO агента, чтобы он видел еще и l.Description!
+        }).ToList();
+
+        // 3. Прыгаем в OpenRouter через агент
+        List<LoraPreset> selectedByAi = await _aiAgent.PredictLorasAsync(spec, lorasForAgent);
+
+        // 4. Обогащаем ответ ИИ триггерными словами из нашего мастер-манифеста
+        foreach (var selected in selectedByAi)
+        {
+            var original = _allLoras.FirstOrDefault(x => x.FileName == selected.FileName);
+            if (original != null && !string.IsNullOrEmpty(original.TriggerWords))
             {
-                _logger.LogInformation("Пользователь выбрал ручной стиль: {Style}", preset.DisplayName);
-                return preset;
+                // Передаем триггерное слово дальше по конвейеру, чтобы C# вшил его в промпт
+                selected.TriggerWords = original.TriggerWords; 
             }
         }
 
-        // 2. Умный режим (Auto): подбираем LoRA на базе метаданных книги (жанра)
-        if (GenreLoraMap.TryGetValue(genre, out var autoPreset))
+        return selectedByAi;
+    }
+    // --- Заглушки для старого интерфейса ILoraOrchestrationService ---
+        // Если твой старый интерфейс требует эти методы, давай вернем их как фолбэки, чтобы не ломать проект:
+    public Dictionary<string, LoraPreset> GetAvailablePresets() 
+    {
+        return _allLoras.ToDictionary(
+        lora => lora.FileName,
+        lora => new LoraPreset
         {
-            _logger.LogInformation("Авто-подбор LoRA для жанра [{Genre}]: {LoraFile}", genre, autoPreset.FileName);
-            return autoPreset;
+            DisplayName = lora.DisplayName,
+            FileName = lora.FileName,
+            DefaultWeight = lora.DefaultWeight
         }
+    );
+        // return LoraPreset().ToDictionary(p => p.FileName, p => new LoraDefinition
+        // {
+        //     FileName = p.FileName,
+        //     DisplayName = p.DisplayName,
+        //     DefaultWeight = p.DefaultWeight,
+        //     TriggerWords = "" // Тут можно было бы подтянуть из манифеста, если нужно
+        // });
+    }
 
-        // Fallback: если жанр экзотический, возвращаем пустую заглушку (работаем без LoRA на чистом Flux)
-        _logger.LogWarning("Логическая LoRA для жанра [{Genre}] не найдена. Рендерим на чистой базовой модели.", genre);
-        return new LoraPreset { DisplayName = "Стандартный", FileName = string.Empty, DefaultWeight = 0.0 };
+    public LoraPreset ResolveLora(string genre, string prompt, string mode)
+    {
+        // Старый синхронный метод. Можешь просто вернуть пустой или дефолтный пресет
+        return new LoraPreset();
     }
 }

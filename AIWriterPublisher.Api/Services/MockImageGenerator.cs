@@ -1,10 +1,11 @@
 using System.Threading.Tasks;
+using AIWriterPublisher.Api.Models.DTO;
 
 namespace AIWriterPublisher.Api.Services
 {
     public class MockImageGenerator : IImageGenerator
     {
-        public async Task<string> GenerateImageAsync(string technicalPrompt, string aspectRatio = "2:3")
+        public async Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec, string aspectRatio = "2:3")
         {
             // Имитируем бурную деятельность нейросети (задержка 3 секунды)
             await Task.Delay(3000);

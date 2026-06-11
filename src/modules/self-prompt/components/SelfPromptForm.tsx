@@ -95,6 +95,14 @@ const technicalFields: {
     multiline: true,
   },
   {
+    key: 'visual_reference',
+    label: 'Visual Reference',
+    sublabel: 'Визуальная справка',
+    placeholder: 'Ссылка на референс или описание...',
+    rows: 2,
+    multiline: true,
+  },
+  {
     key: 'negative_constraints',
     label: 'Negative Constraints',
     sublabel: 'Ограничения',
@@ -106,9 +114,9 @@ const technicalFields: {
 
 const analysisOptions: { id: AnalysisModel; title: string; desc: string; badge?: string }[] = [
   {
-    id: 'groq-llama-3',
-    title: 'Groq Llama 3',
-    desc: 'Базовый бесплатный режим без ограничений',
+    id: 'gtp-oss-120b',
+    title: 'OpenAI GPT-OSS 120B',
+    desc: 'Базовый, но умный и бесплатный режим без ограничений',
   },
   {
     id: 'gemini-flash',
@@ -288,6 +296,7 @@ export default function SelfPromptForm({
           environment: res.parsedSpec.environment || '',
           style: res.parsedSpec.style || res.parsedSpec.style || '',
           composition: res.parsedSpec.composition || '',
+          visual_reference: res.parsedSpec.visual_reference || '',
           negative_constraints: res.parsedSpec.negative_constraints || '',
         });
         

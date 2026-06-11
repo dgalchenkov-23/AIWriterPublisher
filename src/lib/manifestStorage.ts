@@ -37,6 +37,7 @@ export function createDefaultManifest(): ProjectManifest {
       environment: '',
       style: '',
       composition: '',
+      visual_reference: '',
       negative_constraints: '',
     },
     render_settings: {
@@ -47,7 +48,7 @@ export function createDefaultManifest(): ProjectManifest {
       canvas_preset: '1024x1024',
     },
     self_prompt: {
-      analysis_model: 'groq-llama-3',
+      analysis_model: 'gpt-oss-120b',
       reference_image_url: null,
       tz_tab: 'magic-flow',
       formData: { raw_prompt: '' },
@@ -76,6 +77,7 @@ function sanitizeTechnicalSpec(raw: unknown, defaults: TechnicalSpec): Technical
       defaults.style,
     ),
     composition: ensureString(record.composition, defaults.composition),
+    visual_reference: ensureString(record.visual_reference, defaults.visual_reference),
     negative_constraints: ensureString(record.negative_constraints, defaults.negative_constraints),
   };
 }
@@ -192,5 +194,9 @@ export function loadManifestFromStorage(): ProjectManifest {
 }
 
 export function persistManifest(manifest: ProjectManifest): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(manifest));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(manifest));
+  } catch(ex) {
+    // Игнорируем ошибки, например, если пользователь отключил localStorage
+  }
 }

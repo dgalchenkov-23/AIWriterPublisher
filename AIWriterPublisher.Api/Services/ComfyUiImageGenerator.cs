@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using AIWriterPublisher.Api.Models.DTO; 
+using AIWriterPublisher.Api.Services; 
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -21,15 +22,17 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     private readonly HttpClient _httpClient;
     private readonly ILogger<ComfyUiImageGenerator> _logger;
     private const string ComfyUrl = "http://127.0.0.1:8188"; // Стандартный порт ComfyUI
+    private readonly LoraOrchestrationService _loraOrchestrator;
 
-    public ComfyUiImageGenerator(HttpClient httpClient, ILogger<ComfyUiImageGenerator> logger)
+    public ComfyUiImageGenerator(HttpClient httpClient, ILogger<ComfyUiImageGenerator> logger, LoraOrchestrationService loraOrchestrator)
     {
         _httpClient = httpClient;
         _httpClient.Timeout = TimeSpan.FromMinutes(5); // 5 минут на генерацию
         _logger = logger;
+        _loraOrchestrator = loraOrchestrator;
     }
 
-    public async Task<string> GenerateImageAsync(string technicalPrompt, string aspectRatio = "2:3")
+    public async Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec, string aspectRatio = "2:3")
     {
         string width = "1024";
         string height = "1024";
@@ -50,7 +53,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             height = "768";
         }
 
-        return await GenerateEventHorizonAsync(technicalPrompt, "");
+        return await GenerateEventHorizonAsync(technicalPrompt, "", artArchitectorSpec);
     }
 
     public class LoraConfig
@@ -62,7 +65,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
     public class ComfyUiGraphOrchestrator
     {
-        public string InjectLoraChainIntoGraph(string jsonGraph, List<LoraConfig> lorasToInject)
+        public static string InjectLoraChainIntoGraph(string jsonGraph, List<LoraConfig> lorasToInject)
         {
             var graph = JObject.Parse(jsonGraph);
             // 1. Динамически определяем базовые источники, читая их из ноды "12", пока она жива
@@ -309,7 +312,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         }
     }
 
-    public async Task<string> GenerateEventHorizonAsync(string positivePrompt, string negativePrompt)
+    public async Task<string> GenerateEventHorizonAsync(string positivePrompt, string negativePrompt, TechnicalSpecDto artArchitectorSpec)
     {
         try
         {
@@ -320,29 +323,51 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             }
 
             string workflowJson = await File.ReadAllTextAsync(workflowPath);
-            
-            var graph = JsonNode.Parse(workflowJson)?.AsObject();
+
+            // 1. Запрашиваем у ИИ-оркестратора Лоры на основе входящего промпта
+            // Передаем "All" или дефолтный жанр, так как ИИ-агент внутри сам разберется по контексту текста
+            var selectedLoras = await _loraOrchestrator.PrepareLorasForGenerationAsync("All", artArchitectorSpec);
+
+            /// 2. ДОПИСЫВАЕМ ТРИГГЕРНЫЕ СЛОВА В ПРОМПТ
+            // Собираем все непустые триггеры от выбранных Лор
+            var triggers = selectedLoras
+                .Where(l => !string.IsNullOrEmpty(l.TriggerWords))
+                .Select(l => l.TriggerWords);
+
+            if (triggers.Any())
+            {
+                string combinedTriggers = string.Join(", ", triggers);
+                // Мягко добавляем триггеры в начало промпта для максимального веса во Flux
+                positivePrompt = $"{combinedTriggers}, {positivePrompt}";
+                
+                Console.WriteLine($"[ComfyUI] Промпт обогащен триггерами: {positivePrompt}");
+            }
+
+            // 3. Мапим в LoraConfig для врезки файлов в ноды
+            var lorasToInject = selectedLoras.Select(l => new LoraConfig
+            {
+                LoraName = l.FileName,
+                StrengthModel = l.StrengthModel,
+                StrengthClip = l.StrengthClip
+            }).ToList();
+
+            // 4. Вот теперь передаем в оркестратора граф и Лоры для динамической врезки цепочки
+            string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject);
+
+            var graph = JsonNode.Parse(loraGraph)?.AsObject();
+
             if (graph == null) throw new InvalidOperationException("Не удалось распарсить JSON.");
-
-            var loraSpec = request.ComfyUiImg2ImgSpec.LoraSettings;
-            var resolvedLora = _loraOrchestrator.ResolveLora(request.Genre, loraSpec.Mode, loraSpec.CustomLoraName);
-
-            if (!string.IsNullOrEmpty(resolvedLora.FileName))
-            {
-                // Динамически перебиваем параметры ноды LoraLoader в JSON-шаблоне графа ComfyUI
-                comfyGraphJson["12"]["inputs"]["lora_name"] = resolvedLora.FileName;
-                comfyGraphJson["12"]["inputs"]["strength_model"] = loraSpec.AppliedWeight > 0 ? loraSpec.AppliedWeight : resolvedLora.DefaultWeight;
-            }
-            else
-            {
-                // Если LoRA не нужна, пускаем связь в обход или ставим вес 0
-                comfyGraphJson["12"]["inputs"]["strength_model"] = 0.0;
-            }
 
             string positiveNodeId = "6"; 
             if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)
             {
                 posInputs["text"] = positivePrompt;
+            }
+
+            string negativeNodeId = "7"; 
+            if (graph.TryGetPropertyValue(negativeNodeId, out var negNode) && negNode?["inputs"] is JsonObject negInputs)
+            {
+                negInputs["text"] = negativePrompt;
             }
 
             await CheckComfyUiHealthAsync();
@@ -389,7 +414,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
         for (int i = 0; i < maxAttempts; i++)
         {
-            await Task.Delay(2000); 
+            await Task.Delay(5000); 
 
             var historyResponse = await _httpClient.GetAsync($"{ComfyUrl}/history/{promptId}");
             if (!historyResponse.IsSuccessStatusCode) continue;

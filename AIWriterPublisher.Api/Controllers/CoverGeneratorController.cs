@@ -99,11 +99,11 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран Hugging Face (Flux.1-dev). Вызываем выделенный метод...");
                     if (_imageGenerator is RealImageGenerator realGenerator)
                     {
-                        base64Image = await realGenerator.GenerateFluxViaPollinationsAsync(flatFluxPrompt, width, height);
+                        base64Image = await realGenerator.GenerateFluxViaPollinationsAsync(flatFluxPrompt, width, height, finalSpec);
                     }
                     else
                     {
-                        base64Image = await _imageGenerator.GenerateImageAsync(flatFluxPrompt, targetAspectRatio);
+                        base64Image = await _imageGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, targetAspectRatio);
                     }
                 }
                 else
@@ -111,7 +111,7 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран стандартный движок генерации проекта (ComfyUI).");
                     if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
                     {
-                        base64Image = await comfyGenerator.GenerateImageAsync(flatFluxPrompt, targetAspectRatio);
+                        base64Image = await comfyGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, targetAspectRatio);
                     }
                 }
 

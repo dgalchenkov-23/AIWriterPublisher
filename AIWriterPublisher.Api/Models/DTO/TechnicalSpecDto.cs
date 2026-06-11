@@ -16,12 +16,14 @@ public sealed class TechnicalSpecDto
     [JsonPropertyName("environment")]
     public string Environment { get; set; } = string.Empty;
 
-    // Маппим оба возможных варианта от фронта (style и style_and_light) на одно свойство
     [JsonPropertyName("style")]
     public string Style { get; set; } = string.Empty;
 
     [JsonPropertyName("composition")]
     public string Composition { get; set; } = string.Empty;
+
+    [JsonPropertyName("visual_reference")]
+    public string VisualReference { get; set; } = string.Empty;
 
     [JsonPropertyName("negative_constraints")]
     public string NegativeConstraints { get; set; } = string.Empty;

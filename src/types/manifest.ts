@@ -1,6 +1,6 @@
 export type AppMode = 'Brainstorm' | 'Self-Prompt' | 'SceneMaker' | 'Typography';
 
-export type AnalysisModel = 'groq-llama-3' | 'gemini-flash';
+export type AnalysisModel = 'gpt-oss-120b' | 'gemini-flash';
 
 export type SelfPromptTzTab = 'magic-flow' | 'strict-layers';
 
@@ -17,6 +17,7 @@ export interface TechnicalSpec {
   environment: string;
   style: string;
   composition: string;
+  visual_reference: string;
   negative_constraints: string;
 }
 

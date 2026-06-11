@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AIWriterPublisher.Api.Models.DTO;
 using Microsoft.Extensions.Configuration;
 
 namespace AIWriterPublisher.Api.Services
@@ -22,7 +23,7 @@ namespace AIWriterPublisher.Api.Services
         /// <summary>
         /// Реализация интерфейсного метода. Маппит пропорции и шлет запрос во Flux.
         /// </summary>
-        public async Task<string> GenerateImageAsync(string technicalPrompt, string aspectRatio = "2:3")
+        public async Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec, string aspectRatio = "2:3")
         {
             // Маппим привычные Кате пропорции обложки в пиксели, которые понимает Flux.1-dev
             // Базируемся на золотом стандарте ~1 мегапиксель для Flux
@@ -47,7 +48,7 @@ namespace AIWriterPublisher.Api.Services
 
             // Вызываем наш прямой enterprise-пайплайн к Hugging Face
             // return await GenerateFluxViaHuggingFaceAsync(technicalPrompt, width, height);
-            return await GenerateFluxViaPollinationsAsync(technicalPrompt, width, height);
+            return await GenerateFluxViaPollinationsAsync(technicalPrompt, width, height, artArchitectorSpec);
         }
 
         /// <summary>
@@ -101,7 +102,7 @@ namespace AIWriterPublisher.Api.Services
         /// <summary>
         /// Выделенный метод для работы с Hugging Face Inference API.
         /// </summary>
-        public async Task<string> GenerateFluxViaPollinationsAsync(string prompt, string width, string height)
+        public async Task<string> GenerateFluxViaPollinationsAsync(string prompt, string width, string height, TechnicalSpecDto artArchitectorSpec = null)
         {
             try
             {

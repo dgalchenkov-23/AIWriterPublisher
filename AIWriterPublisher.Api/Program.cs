@@ -1,6 +1,8 @@
 using Microsoft.SemanticKernel;
 using AIWriterPublisher.Api.Services;
 using AIWriterPublisher.Api.Agents.ArtDirector;
+using AIWriterPublisher.Api.Agents.LoraAgent;
+using AIWriterPublisher.Api.Agents.LoraAgent.Interface;
 using AIWriterPublisher.Api.Agents.PromptEngineer;
 using AIWriterPublisher.Api.Agents.ArtArchitector;
 using System.Net;
@@ -57,13 +59,18 @@ builder.Services.AddTransient<Kernel>(sp =>
     return kernelBuilder.Build();
 });
 
-// 4. Регистрируем наших ИИ-Агентов и Мок-генератор картинок
+//Регистрируем наших ИИ-Агентов
 builder.Services.AddTransient<ArtDirectorAgent>();
-builder.Services.AddTransient<PromptEngineerAgent>(); // Просто регистрируем тип, .NET сам прокинет туда конфигурацию
+builder.Services.AddScoped<LoraPredictorAgent>();
+builder.Services.AddTransient<PromptEngineerAgent>(); 
 builder.Services.AddTransient<ArtArchitectorAgent>();
+// Регистрируем сервис оркестрации Лор, который будет работать с ИИ-агентом
+builder.Services.AddScoped<LoraOrchestrationService>();
+builder.Services.AddScoped<ILoraOrchestrationService, LoraOrchestrationService>();
+// Регистрируем генераторы картинок
 builder.Services.AddTransient<RealImageGenerator>();
 builder.Services.AddTransient<ComfyUiImageGenerator>();
-builder.Services.AddHttpContextAccessor(); // Required to access HttpContext
+builder.Services.AddHttpContextAccessor(); // Для доступа к строке запроса внутри генератора картинок
 
 builder.Services.AddTransient<IImageGenerator>(sp =>
 {
