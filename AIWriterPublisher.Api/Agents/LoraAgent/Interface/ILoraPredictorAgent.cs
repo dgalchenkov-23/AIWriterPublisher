@@ -6,6 +6,6 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent.Interface
 {
     public interface ILoraPredictorAgent
     {
-        Task<List<LoraPreset>> PredictLorasAsync(TechnicalSpecDto spec, List<LoraPreset> availableLoras);
+        Task<List<LoraPreset>> PredictLorasAsync(TechnicalSpecDto spec, List<LoraPreset> availableLoras, string analysisModel);
     }
 }

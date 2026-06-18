@@ -67,20 +67,23 @@ public sealed class SafeZonesDto
 /// </summary>
 public sealed class ComfyUiImg2ImgSpecDto
 {
-    [JsonPropertyName("enable_inpainting")]
-    public bool EnableInpainting { get; set; } = false;
-
-    [JsonPropertyName("denoising_strength")]
-    public double DenoisingStrength { get; set; } = 0.45;
+    [JsonPropertyName("reference_image_path")]
+    public string ReferenceImagePath { get; set; } = string.Empty;
 
     [JsonPropertyName("prompt_override")]
     public string PromptOverride { get; set; } = string.Empty;
 
-    [JsonPropertyName("reference_image_path")]
-    public string ReferenceImagePath { get; set; } = string.Empty;
+    [JsonPropertyName("mask_description")]
+    public string? MaskDescription { get; set; }
 
     [JsonPropertyName("mask_image_path")]
-    public string MaskImagePath { get; set; } = string.Empty;
+    public string? MaskImagePath { get; set; }
+
+    [JsonPropertyName("enable_inpainting")]
+    public bool EnableInpainting { get; set; }
+
+    [JsonPropertyName("denoising_strength")]
+    public double DenoisingStrength { get; set; } = 1f;
 }
 
 /// <summary>

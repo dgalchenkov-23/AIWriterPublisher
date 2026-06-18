@@ -39,7 +39,7 @@ public class LoraOrchestrationService : ILoraOrchestrationService
         }
     }
 
-    public async Task<List<LoraPreset>> PrepareLorasForGenerationAsync(string currentGenre, TechnicalSpecDto spec)
+    public async Task<List<LoraPreset>> PrepareLorasForGenerationAsync(string currentGenre, TechnicalSpecDto spec, string analysisModel)
     {
         // 1. Фильтруем Лоры для конкретного жанра Кати, чтобы сберечь контекст ИИ
         var filteredLorasForAi = _allLoras.Where(l => 
@@ -58,7 +58,7 @@ public class LoraOrchestrationService : ILoraOrchestrationService
         }).ToList();
 
         // 3. Прыгаем в OpenRouter через агент
-        List<LoraPreset> selectedByAi = await _aiAgent.PredictLorasAsync(spec, lorasForAgent);
+        List<LoraPreset> selectedByAi = await _aiAgent.PredictLorasAsync(spec, lorasForAgent, analysisModel);
 
         // 4. Обогащаем ответ ИИ триггерными словами из нашего мастер-манифеста
         foreach (var selected in selectedByAi)

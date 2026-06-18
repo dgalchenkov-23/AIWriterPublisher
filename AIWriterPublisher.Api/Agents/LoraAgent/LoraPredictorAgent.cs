@@ -27,7 +27,7 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
             _configuration = configuration;
             _logger.LogInformation("LoraPredictorAgent инициализирован.");
         }
-        public async Task<List<LoraPreset>> PredictLorasAsync(TechnicalSpecDto spec, List<LoraPreset> availableLoras)
+        public async Task<List<LoraPreset>> PredictLorasAsync(TechnicalSpecDto spec, List<LoraPreset> availableLoras, string analysisModel)
         {
             if (spec == null || availableLoras == null || !availableLoras.Any())
             {
@@ -53,11 +53,19 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
                 - Композиция (Composition): {spec.Composition}
                 - Визуальная ссылка (VisualReference): {spec.VisualReference}
                 - Негативные ограничения (Negative Constraints): {spec.NegativeConstraints}";
-
             try
             {
-                // Вызываем OpenRouter или Google AI (в зависимости от твоего клиента)
-                string rawResponse = await CallLlmApiAsync(systemPrompt, userMessage);
+                Console.WriteLine($"[LoraPredictor] Модель для анализа ЛоРА: {analysisModel}");
+                string rawResponse = string.Empty;
+                if (analysisModel == "ollama-qwen-2-7b")
+                {
+                    rawResponse = await CallOllamaForLoraAsync(systemPrompt, userMessage);
+                }
+                else
+                {
+                    // Старая логика для OpenRouter/Gemini
+                    rawResponse = await CallLlmApiAsync(systemPrompt, userMessage);
+                }
 
                 // Очищаем от возможных Markdown-кавычек, если модель затупила (```json ... ```)
                 string cleanJson = CleanMarkdownJson(rawResponse);
@@ -70,7 +78,7 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
 
                 if (agentResult?.SelectedLoras != null && agentResult.SelectedLoras.Any())
                 {
-                    _logger.LogInformation("LoraPredictorAgent успешно подобрал модели. Обоснование ИИ: {Reason}", agentResult.Reasoning);
+                    _logger.LogInformation("[LoraPredictorAgent] успешно подобрал модели. Обоснование ИИ: {Reason}", agentResult.Reasoning);
                     return agentResult.SelectedLoras;
                 }
             }
@@ -80,6 +88,99 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
             }
 
             return new List<LoraPreset>();
+        }
+
+        /// <summary>
+        /// Вызов локальной модели Qwen через Ollama для подбора LoRA
+        /// </summary>
+        private async Task<string> CallOllamaForLoraAsync(string systemPrompt, string userMessage)
+        {
+            string ollamaUrl = _configuration["AIServices:Ollama:BaseUrl"] ?? "http://localhost:11434";
+            string modelName = _configuration["AIServices:Ollama:Model"] ?? "qwen2.5-coder:7b";
+
+            // Формируем полный промпт
+            string fullPrompt = $@"[СИСТЕМНАЯ ИНСТРУКЦИЯ]
+                Ты — экспертный агент по подбору LoRA-моделей для генерации книжных иллюстраций.
+                Твоя задача — анализировать промпт и возвращать ТОЛЬКО JSON с выбранными LoRA.
+                Никаких пояснений до или после JSON.
+
+                {systemPrompt}
+
+                [ЗАПРОС ПОЛЬЗОВАТЕЛЯ]
+                {userMessage}
+
+                [ПРАВИЛА ОТВЕТА]
+                Верни ТОЛЬКО JSON в формате:
+                {{""SelectedLoras"": [...], ""Reasoning"": ""краткое обоснование""}}
+                Без markdown, без ```json, только чистый JSON.";
+
+            var requestBody = new
+            {
+                model = modelName,
+                prompt = fullPrompt,
+                stream = false,
+                options = new
+                {
+                    temperature = 0.1,
+                    num_predict = 1000,
+                    top_p = 0.9
+                }
+            };
+
+            string jsonPayload = JsonSerializer.Serialize(requestBody);
+            
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{ollamaUrl.TrimEnd('/')}/api/generate");
+            request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            _logger.LogInformation($"[LoraAgent Ollama] Отправка запроса к {ollamaUrl}/api/generate, модель: {modelName}");
+
+            var response = await _httpClient.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                string error = await response.Content.ReadAsStringAsync();
+                _logger.LogError($"[LoraAgent Ollama Error] {response.StatusCode}: {error}");
+                throw new HttpRequestException($"Ollama API error: {response.StatusCode}");
+            }
+
+            string responseString = await response.Content.ReadAsStringAsync();
+            
+            using var doc = JsonDocument.Parse(responseString);
+            var root = doc.RootElement;
+            string rawResponse = string.Empty;
+            if (root.TryGetProperty("response", out var responseContent))
+            {
+                rawResponse = responseContent.GetString() ?? "";
+                _logger.LogInformation($"[LoraAgent Ollama] Получен ответ, длина: {rawResponse.Length} символов");
+                
+                // Очистка от служебных фраз
+                rawResponse = CleanOllamaResponse(rawResponse);
+                
+                return rawResponse;
+            }
+            
+            throw new InvalidOperationException("Не удалось извлечь ответ из Ollama API");
+        }
+
+        private string CleanOllamaResponse(string raw)
+        {
+            // Удаляем markdown
+            raw = raw.Replace("```json", "").Replace("```", "").Replace("```text", "").Trim();
+            
+            // Удаляем возможные обрамляющие кавычки
+            if (raw.StartsWith("\"") && raw.EndsWith("\""))
+                raw = raw.Substring(1, raw.Length - 2);
+            
+            // Пытаемся извлечь JSON если модель добавила пояснения
+            int startBrace = raw.IndexOf('{');
+            int endBrace = raw.LastIndexOf('}');
+            
+            if (startBrace >= 0 && endBrace > startBrace)
+            {
+                raw = raw.Substring(startBrace, endBrace - startBrace + 1);
+            }
+            
+            return raw;
         }
 
         private string BuildSystemPrompt(string availableLorasJson)
@@ -236,14 +337,12 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
 
         private async Task<string> CallLlmApiAsync(string system, string user)
         {
-            // string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
-            // string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
-            // string modelName = _configuration["AIServices:OpenRouter:Model"] ?? "meta-llama/llama-3.2-3b-instruct:free";
             string baseUrl = _configuration["AIServices:Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta/openai/";
             string apiKey = _configuration["AIServices:Gemini:ApiKey"] ?? "";
             string modelName = _configuration["AIServices:Gemini:Model"] ?? "gemini-3.1-flash-lite";
             string cleanApiKey = apiKey?.Trim() ?? "";
 
+            Console.WriteLine($"[LoraAgent] Вызов LLM API для подбора LoRA. Модель: {modelName}, URL: {baseUrl}");
             var retryPolicy = Policy
                 .Handle<HttpRequestException>()
                 .OrResult<HttpResponseMessage>(r => r.StatusCode == System.Net.HttpStatusCode.TooManyRequests)

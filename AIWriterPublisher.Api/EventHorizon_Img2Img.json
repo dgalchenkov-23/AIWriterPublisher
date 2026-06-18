@@ -1,0 +1,153 @@
+{
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "uncensoredQwen34BLLMForZ_fp8.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 660741357184303,
+      "steps": 10,
+      "cfg": 2.5,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": ["58", 0],
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["74", 0]
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "z-aesthetic, waist-level camera angle, camera pointed slightly upward at the model, full body shot, young woman with European facial features, dark brown hair, violet-tinged irises, glowing eyes, scales on cheeks, shoulders, forearms, shins and thighs, wearing white tank top, denim shorts, sneakers, standing, body slightly turned, arms relaxed at sides, face looking straight forward, neutral expression, face and glowing eyes in sharp focus, detailed scale texture, soft diffuse lighting from front and slightly above, cool violet accents in eyes, neutral clothing tones, neutral studio background with light gray floor, slight atmospheric haze, painterly textures, visible brushstrokes, canvas texture",
+      "clip": ["2", 0]
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "low quality, blurry, oversharpened, plastic skin, extra fingers, distorted face, bad anatomy, overexposed, underexposed, harsh lighting, AI artifacts, watermark, hairy skin",
+      "clip": ["2", 0]
+    }
+  },
+  "7": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": 896,
+      "height": 1152,
+      "batch_size": 1
+    }
+  },
+  "8": {
+    "class_type": "Anything Everywhere",
+    "inputs": {
+      "anything": ["3", 0]
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["4", 0],
+      "vae": ["3", 0]
+    }
+  },
+  "55": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["9", 0]
+    }
+  },
+  "57": {
+    "class_type": "Seed (rgthree)",
+    "inputs": {
+      "seed": -1
+    }
+  },
+  "58": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "Z-Aesthetic-Pro-v1_15.safetensors",
+      "strength_model": 1,
+      "model": ["59", 0]
+    }
+  },
+  "59": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "eventHorizon_zitV10.safetensors"
+    }
+  },
+  "60": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    }
+  },
+  "72": {
+    "class_type": "FeatherMask",
+    "inputs": {
+      "mask": ["79", 1],
+      "left": 7,
+      "top": 7,
+      "right": 7,
+      "bottom": 0
+    }
+  },
+  "73": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "on_false": ["72", 0],
+      "on_true": ["75", 0],
+      "switch": false
+    }
+  },
+  "74": {
+    "class_type": "SetLatentNoiseMask",
+    "inputs": {
+      "samples": ["7", 0],
+      "mask": ["73", 0]
+    }
+  },
+  "75": {
+    "class_type": "LoadImageMask",
+    "inputs": {
+      "image": "example.png",
+      "channel": "alpha"
+    }
+  },
+  "77": {
+    "class_type": "GroundingDinoModelLoader (segment anything)",
+    "inputs": {
+      "model_name": "GroundingDINO_SwinT_OGC (694MB)"
+    }
+  },
+  "78": {
+    "class_type": "SAMModelLoader (segment anything)",
+    "inputs": {
+      "model_name": "sam_vit_b (375MB)"
+    }
+  },
+  "79": {
+    "class_type": "GroundingDinoSAMSegment (segment anything)",
+    "inputs": {
+      "prompt": "woman, full body, glowing eyes, scales on cheeks",
+      "threshold": 0.3,
+      "sam_model": ["78", 0],
+      "grounding_dino_model": ["77", 0],
+      "image": ["60", 0]
+    }
+  }
+}

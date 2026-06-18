@@ -20,7 +20,7 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             _configuration = configuration;
         }
 
-        public async Task<string> GenerateTechnicalPromptAsync(TechnicalSpecDto spec)
+        public async Task<string> GenerateTechnicalPromptAsync(TechnicalSpecDto spec, string analysisModel)
         {
             // Системный промпт для Flux.1-dev / Z-Image через gpt-oss-120b
             string systemPrompt = @"
@@ -175,6 +175,12 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
                 - Визуальная ссылка (VisualReference): {spec.VisualReference}
                 - Негативные ограничения (Negative Constraints): {spec.NegativeConstraints}";
 
+            // Если модель — локальная Ollama, используем её специфический эндпоинт и формат промпта
+            if (analysisModel == "ollama-qwen-2-7b")
+            {
+                return await CallOllamaForPromptAsync(systemPrompt, userContent);
+            }
+
             // Читаем из актуальной безопасной иерархии конфигурации
             string baseUrl = _configuration["AiServices:OpenRouter:BaseUrl"] ?? "[https://openrouter.ai/api/v1](https://openrouter.ai/api/v1)";
             string apiKey = _configuration["AiServices:OpenRouter:ApiKey"] ?? throw new InvalidOperationException("OpenRouter ApiKey не настроен!");
@@ -233,6 +239,112 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             catch (Exception ex)
             {
                 Console.WriteLine($"[PromptEngineer Крах] Исключение: {ex.Message}");
+                return string.Empty;
+            }
+        }
+        private async Task<string> CallOllamaForPromptAsync(string systemPrompt, string userContent)
+        {
+            string ollamaUrl = _configuration["AIServices:Ollama:BaseUrl"] ?? "http://localhost:11434";
+            string modelName = _configuration["AIServices:Ollama:Model"] ?? "qwen2.5-coder:7b";
+            
+            // Ollama не разделяет system/user в стандартном API generate
+            // Формируем полный промпт, явно разделяя системную инструкцию и пользовательский запрос
+            string fullPrompt = $@"[СИСТЕМНАЯ ИНСТРУКЦИЯ]
+                {systemPrompt}
+
+                [ЗАПРОС ПОЛЬЗОВАТЕЛЯ]
+                {userContent}
+
+                [ПРАВИЛА ОТВЕТА]
+                Ты должен вернуть ТОЛЬКО итоговую плоскую строку на АНГЛИЙСКОМ языке.
+                Никаких вводных фраз, никаких кавычек, никаких объяснений и никаких markdown-разметок.
+                Только чистый, готовый к отправке в модель текст промпта.";
+
+            var requestBody = new
+            {
+                model = modelName,
+                prompt = fullPrompt,
+                stream = false,
+                options = new
+                {
+                    temperature = 0.1,
+                    num_predict = 2000,
+                    top_p = 0.9,
+                    stop = new[] { "[СИСТЕМНАЯ", "[ЗАПРОС", "[ПРАВИЛА" } // Останавливаемся если модель начинает генерировать мета-текст
+                }
+            };
+
+            string jsonPayload = JsonSerializer.Serialize(requestBody);
+            
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{ollamaUrl.TrimEnd('/')}/api/generate");
+            request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            Console.WriteLine($"[PromptEngineer Ollama] Отправка запроса к {ollamaUrl}/api/generate, модель: {modelName}");
+            Console.WriteLine($"[PromptEngineer Ollama] Жанр: {userContent.Substring(0, Math.Min(100, userContent.Length))}...");
+
+            try
+            {
+                var response = await _httpClient.SendAsync(request);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    string error = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"[PromptEngineer Ollama Error] {response.StatusCode}: {error}");
+                    return string.Empty;
+                }
+
+                string responseString = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"[PromptEngineer Ollama] Получен ответ, длина: {responseString.Length} символов");
+                
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+                
+                if (root.TryGetProperty("response", out var responseContent))
+                {
+                    string rawPrompt = responseContent.GetString() ?? "";
+                    
+                    // Очистка от возможных markdown и лишних кавычек
+                    rawPrompt = rawPrompt.Replace("```", "").Replace("```json", "").Replace("```text", "").Trim();
+                    
+                    // Удаляем возможные обрамляющие кавычки
+                    if (rawPrompt.StartsWith("\"") && rawPrompt.EndsWith("\""))
+                        rawPrompt = rawPrompt.Substring(1, rawPrompt.Length - 2);
+                    
+                    // Если модель начала отвечать с пояснений — пытаемся извлечь промпт
+                    // Ищем первую строку, которая выглядит как нормальный промпт (не начинается со слов "вот", "здесь")
+                    var lines = rawPrompt.Split('\n');
+                    string cleanPrompt = "";
+                    foreach (var line in lines)
+                    {
+                        string trimmed = line.Trim();
+                        if (string.IsNullOrEmpty(trimmed)) continue;
+                        
+                        // Пропускаем служебные фразы на русском
+                        if (trimmed.StartsWith("Вот") || trimmed.StartsWith("Здесь") || 
+                            trimmed.StartsWith("Я") || trimmed.StartsWith("Обработан") ||
+                            trimmed.StartsWith("Сгенери") || trimmed.StartsWith("Получ"))
+                        {
+                            continue;
+                        }
+                        
+                        // Первая нормальная строка — берём всю оставшуюся часть
+                        cleanPrompt = string.Join(" ", lines.Skip(Array.IndexOf(lines, line))).Trim();
+                        break;
+                    }
+                    
+                    if (!string.IsNullOrEmpty(cleanPrompt))
+                        rawPrompt = cleanPrompt;
+                    
+                    Console.WriteLine($"[PromptEngineer Ollama Success] Финальный промпт (первые 200 символов): {rawPrompt.Substring(0, Math.Min(200, rawPrompt.Length))}...");
+                    return rawPrompt;
+                }
+                
+                Console.WriteLine($"[PromptEngineer Ollama Error] Поле 'response' не найдено в ответе");
+                return string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PromptEngineer Ollama Крах] Исключение: {ex.Message}");
                 return string.Empty;
             }
         }

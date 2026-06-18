@@ -1,0 +1,121 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "fireRedEdit",
+      "images": ["126", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": { "title": "Сохранить изображение" }
+  },
+  "115": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "Загрузить CLIP" }
+  },
+  "116": {
+    "inputs": { "vae_name": "qwenImageVAE_qwenImageVAE.safetensors" },
+    "class_type": "VAELoader",
+    "_meta": { "title": "Загрузить VAE" }
+  },
+  "117": {
+    "inputs": {
+      "prompt": "模糊，变形，低质量，多余的物体",
+      "clip": ["115", 0],
+      "vae": ["116", 0],
+      "image1": ["147", 0],
+      "image2": ["133", 0],
+      "image3": ["135", 0]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": { "title": "TextEncodeQwenImageEditPlus (Negative)" }
+  },
+  "118": {
+    "inputs": {
+      "prompt": "把剑替换为战斧，保持其他不变",
+      "clip": ["115", 0],
+      "vae": ["116", 0],
+      "image1": ["147", 0],
+      "image2": ["133", 0],
+      "image3": ["135", 0]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": { "title": "TextEncodeQwenImageEditPlus (Positive)" }
+  },
+  "120": {
+    "inputs": {
+      "shift": 3.1,
+      "model": ["169", 0]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": { "title": "Выборка модели AuraFlow" }
+  },
+  "123": {
+    "inputs": {
+      "strength": 1,
+      "model": ["120", 0]
+    },
+    "class_type": "CFGNorm",
+    "_meta": { "title": "CFGNorm" }
+  },
+  "125": {
+    "inputs": {
+      "pixels": ["147", 0],
+      "vae": ["116", 0]
+    },
+    "class_type": "VAEEncode",
+    "_meta": { "title": "Кодировать VAE" }
+  },
+  "126": {
+    "inputs": {
+      "samples": ["130", 0],
+      "vae": ["116", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "Декодировать VAE" }
+  },
+  "130": {
+    "inputs": {
+      "seed": 43,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["123", 0],
+      "positive": ["118", 0],
+      "negative": ["117", 0],
+      "latent_image": ["125", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler" }
+  },
+  "133": {
+    "inputs": { "image": "empty_ref.png" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Загрузить изображение" }
+  },
+  "135": {
+    "inputs": { "image": "empty_ref.png" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Загрузить изображение" }
+  },
+  "143": {
+    "inputs": { "image": "empty_ref.png" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Загрузить изображение" }
+  },
+  "147": {
+    "inputs": { "image": ["143", 0] },
+    "class_type": "FluxKontextImageScale",
+    "_meta": { "title": "FluxKontextImageScale" }
+  },
+  "169": {
+    "inputs": { "unet_name": "FireRed-Image-Edit-1.1-Q3_K_S.gguf" },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": { "title": "Unet Loader (GGUF)" }
+  }
+}

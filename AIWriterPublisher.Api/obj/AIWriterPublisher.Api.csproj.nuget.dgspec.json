@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.Api\\AIWriterPublisher.Api.csproj": {}
+    "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.API\\AIWriterPublisher.Api.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.Api\\AIWriterPublisher.Api.csproj": {
+    "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.API\\AIWriterPublisher.Api.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.Api\\AIWriterPublisher.Api.csproj",
+        "projectUniqueName": "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.API\\AIWriterPublisher.Api.csproj",
         "projectName": "AIWriterPublisher.Api",
-        "projectPath": "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.Api\\AIWriterPublisher.Api.csproj",
+        "projectPath": "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.API\\AIWriterPublisher.Api.csproj",
         "packagesPath": "C:\\Users\\Gall\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.Api\\obj\\",
+        "outputPath": "C:\\Users\\Gall\\Documents\\_WORK\\AIWriterPublisher\\AIWriterPublisher.API\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Gall\\AppData\\Roaming\\NuGet\\NuGet.Config",

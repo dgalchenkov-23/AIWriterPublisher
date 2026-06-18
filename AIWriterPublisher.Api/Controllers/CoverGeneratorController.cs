@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using AIWriterPublisher.Api.Agents.ArtDirector;
 using AIWriterPublisher.Api.Agents.PromptEngineer;
 using AIWriterPublisher.Api.Agents.ArtArchitector;
+using AIWriterPublisher.Api.Agents.VisionEditorAgent;
 using AIWriterPublisher.Api.Services;
 using AIWriterPublisher.Api.Models;
 using AIWriterPublisher.Api.Models.DTO; 
@@ -21,24 +22,30 @@ namespace AIWriterPublisher.Api.Controllers
         private readonly ArtDirectorAgent _artDirectorAgent;
         private readonly ArtArchitectorAgent _artArchitector;
         private readonly PromptEngineerAgent _promptEngineerAgent;
+        private readonly VisionEditorAgent _visionAgent;
         private readonly IImageGenerator _imageGenerator;
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<CoverGeneratorController> _logger;
 
         public CoverGeneratorController(
             ArtDirectorAgent artDirectorAgent,
             ArtArchitectorAgent artArchitector,
             PromptEngineerAgent promptEngineerAgent,
+            VisionEditorAgent visionAgent,
             IImageGenerator imageGenerator,
             HttpClient httpClient,
+            ILogger<CoverGeneratorController> logger,
             IConfiguration configuration)
         {
             _artDirectorAgent = artDirectorAgent;
             _artArchitector = artArchitector;
             _promptEngineerAgent = promptEngineerAgent;
+            _visionAgent = visionAgent;
             _imageGenerator = imageGenerator;
             _httpClient = httpClient;
             _configuration = configuration;
+            _logger = logger;
         }
 
         [HttpPost("brainstorm")]
@@ -75,13 +82,13 @@ namespace AIWriterPublisher.Api.Controllers
                     if (string.IsNullOrWhiteSpace(request.RawPrompt))
                         return BadRequest("Промпт для распознавания не может быть пустым.");
 
-                    finalSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, request.RenderSettings?.Provider?.ToLower());
-                    flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec);
+                    finalSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, request.AnalysisModel);
+                    flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
                 }
                 else 
                 {
-                    Console.WriteLine("[Direct Engine] Режим «Строгие слои» активирован. Используем предоставленную структуру ТЗ.");
-                    flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec);
+                    Console.WriteLine("[Direct Engine] Режим «Строгие слои» активирован. Используем предоставленную структуру ТZ.");
+                    flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
                 }
 
                 Console.WriteLine($"[Direct Engine] Итоговый плоский промпт для Flux: {flatFluxPrompt}");
@@ -103,7 +110,7 @@ namespace AIWriterPublisher.Api.Controllers
                     }
                     else
                     {
-                        base64Image = await _imageGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, targetAspectRatio);
+                        base64Image = await _imageGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
                     }
                 }
                 else
@@ -111,7 +118,7 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран стандартный движок генерации проекта (ComfyUI).");
                     if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
                     {
-                        base64Image = await comfyGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, targetAspectRatio);
+                        base64Image = await comfyGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
                     }
                 }
 
@@ -142,69 +149,70 @@ namespace AIWriterPublisher.Api.Controllers
         [HttpPost("edit-reference")]
         public async Task<IActionResult> EditWithReference([FromBody] DirectGenerationRequest request)
         {
-            Console.WriteLine("[Z-Image Engine] Получен запрос на редактирование по референсу.");
+            _logger.LogInformation("[Z-Image Engine] Получен запрос на Vision-редактирование.");
 
             if (string.IsNullOrWhiteSpace(request.BaseImageBase64))
             {
-                return BadRequest(new { error = "Для редактирования необходимо передать базовое изображение в формате Base64 (BaseImageBase64)." });
+                return BadRequest(new { error = "Для редактирования необходимо передать изображение (BaseImageBase64)." });
             }
 
             try
             {
-                // 1. Формируем промпт изменений (извлекаем из слоев или сырого текста)
-                string modificationPrompt = string.Empty;
+                // 1. ПОДГОТОВКА ФАЙЛА (Манифест v0.4: работаем через локальные пути)
+                string fileName = $"ref_{Guid.NewGuid():N}.png";
+                string localPath = Path.Combine(AppContext.BaseDirectory, "covers", fileName);
+                
+                // Сохраняем Base64 во временный файл для анализа агентом
+                var base64Data = request.BaseImageBase64.Contains(",") ? request.BaseImageBase64.Split(',')[1] : request.BaseImageBase64;
+                await System.IO.File.WriteAllBytesAsync(localPath, Convert.FromBase64String(base64Data));
 
+                ComfyUiImg2ImgSpecDto editSpec;
+
+                // 2. ВЫБОР ПУТИ АНАЛИЗА
                 if (request.Mode == "raw-parse" && !string.IsNullOrWhiteSpace(request.RawPrompt))
                 {
-                    // Если Катя ввела "Убери кота и сделай небо багровым" в свободном стиле
-                    var parsedSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, "comfyui");
-                    modificationPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(parsedSpec);
+                    // РЕЖИМ VISION: Nex-N2-Pro "смотрит" на картинку и "читает" Магический поток
+                    _logger.LogInformation("[Z-Image] Запуск Vision-анализа (Nex-N2-Pro)...");
+                    editSpec = await _visionAgent.AnalyzeEditRequestAsync(localPath, request.RawPrompt);
                 }
                 else
                 {
-                    // Если правки переданы четко структурировано в TechnicalSpec
+                    // РЕЖИМ СТРОГИХ СЛОЕВ: Используем PromptEngineer для сборки текста
+                    _logger.LogInformation("[Z-Image] Сборка промпта из технических слоев...");
                     TechnicalSpecDto spec = request.TechnicalSpec ?? new TechnicalSpecDto();
-                    modificationPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(spec);
+                    string techPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(spec, request.AnalysisModel);
+                    
+                    editSpec = new ComfyUiImg2ImgSpecDto 
+                    { 
+                        PromptOverride = techPrompt,
+                        DenoisingStrength = request.DenoisingStrength ?? 0.45,
+                        ReferenceImagePath = localPath
+                    };
                 }
 
-                if (string.IsNullOrWhiteSpace(modificationPrompt))
-                {
-                    return BadRequest(new { error = "Промпт изменений (описание того, что перерисовать) не может быть пустым." });
-                }
-
-                Console.WriteLine($"[Z-Image Engine] Итоговый промпт правок: {modificationPrompt}");
-
-                // 2. Достаем денойз из настроек (дефолт 0.35 из Манифеста 0.3)
-                double denoise = request.DenoisingStrength ?? 0.35;
-                Console.WriteLine($"[Z-Image Engine] Сила денойза: {denoise}");
-
-                // 3. Вызываем локальный ComfyUI генератор через приведение типов
+                // 3. ОТПРАВКА В COMFYUI
+                _logger.LogWarning("[Z-Image Debug] Текущий тип генератора: {Type}", _imageGenerator.GetType().Name);
                 if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
                 {
-                    Console.WriteLine("[Z-Image Engine] Передаем управление в ComfyUiImageGenerator...");
-                    string resultBase64 = await comfyGenerator.EditImageWithReferenceAsync(modificationPrompt, request.BaseImageBase64, denoise);
-
-                    // Гарантируем префикс для корректного отображения на HTML5 Canvas
-                    if (!resultBase64.StartsWith("data:") && !resultBase64.StartsWith("http"))
-                    {
-                        resultBase64 = $"data:image/png;base64,{resultBase64}";
-                    }
+                    _logger.LogInformation("[Z-Image] Инжекция в ComfyUI. Промпт: {P}", editSpec.PromptOverride);
+                    
+                    // Вызываем метод, принимающий полный DTO спецификации
+                    string resultBase64 = await comfyGenerator.EditImageWithFireRedAsync(editSpec);
 
                     return Ok(new DirectGenerationResponse 
                     { 
                         ImageBase64 = resultBase64,
-                        ParsedSpec = request.Mode == "raw-parse" ? request.TechnicalSpec : null
+                        // Возвращаем то, что надумал Vision-агент для синхронизации фронта
+                        ParsedSpec = request.Mode == "raw-parse" ? new TechnicalSpecDto { Subject = editSpec.PromptOverride } : null
                     });
                 }
-                else
-                {
-                    return StatusCode(501, new { error = "Режим Z-Image (Img2Img) поддерживается только локальным движком ComfyUI. Проверьте конфигурацию DI." });
-                }
+
+                return StatusCode(501, new { error = "Движок ComfyUI не настроен." });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Z-Image Error] Крах эндпоинта правок: {ex.Message}");
-                return StatusCode(500, new { error = $"Ошибка при редактировании по референсу: {ex.Message}" });
+                _logger.LogError(ex, "[Z-Image Error] Крах эндпоинта правок");
+                return StatusCode(500, new { error = ex.Message });
             }
         }
         /// <summary>

@@ -9,7 +9,8 @@ namespace AIWriterPublisher.Api.Services
         /// <param name="technicalPrompt">Промпт от Агента-Промптера</param>
         /// <param name="aspectRatio">Соотношение сторон (например, "2:3" для обложек)</param>
         /// <param name="artArchitectorSpec">Спецификация арт-актора</param>
+        /// <param name="analysisModel">Модель анализа</param>
         /// <returns>URL сгенерированного изображения</returns>
-        Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec = null, string aspectRatio = "2:3");
+        Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec = null, string aspectRatio = "2:3", string analysisModel = null);
     }
 }

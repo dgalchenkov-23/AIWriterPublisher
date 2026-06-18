@@ -1,6 +1,7 @@
 using Microsoft.SemanticKernel;
 using AIWriterPublisher.Api.Services;
 using AIWriterPublisher.Api.Agents.ArtDirector;
+using AIWriterPublisher.Api.Agents.VisionEditorAgent;
 using AIWriterPublisher.Api.Agents.LoraAgent;
 using AIWriterPublisher.Api.Agents.LoraAgent.Interface;
 using AIWriterPublisher.Api.Agents.PromptEngineer;
@@ -64,6 +65,7 @@ builder.Services.AddTransient<ArtDirectorAgent>();
 builder.Services.AddScoped<LoraPredictorAgent>();
 builder.Services.AddTransient<PromptEngineerAgent>(); 
 builder.Services.AddTransient<ArtArchitectorAgent>();
+builder.Services.AddTransient<VisionEditorAgent>();
 // Регистрируем сервис оркестрации Лор, который будет работать с ИИ-агентом
 builder.Services.AddScoped<LoraOrchestrationService>();
 builder.Services.AddScoped<ILoraOrchestrationService, LoraOrchestrationService>();

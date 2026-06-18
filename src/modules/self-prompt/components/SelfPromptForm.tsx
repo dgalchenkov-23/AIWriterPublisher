@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import { directGenerate } from '../api/directGenerate';
-import { sendFlowToPipeline } from '../api/directGenerate';
+import { sendFlowToPipeline, sendImageToEdit, type DirectPayload } from '../api/directGenerate';
 import { approveCoverForExport } from '../api/approveCover';
 import GenerationLightbox from './GenerationLightbox';
 import {
@@ -23,6 +22,8 @@ const tzTabs: { id: SelfPromptTzTab; label: string }[] = [
 
 const MAGIC_PLACEHOLDER =
   'Опиши свою обложку во всех деталях... Наш ИИ-директор послушно разложит твой творческий поток по строгим техническим слоям без капли лишней фантазии.';
+const MAGIC_UNCENS_PLACEHOLDER =
+  'Опиши здесь подробности, которые могут не пройти цензуру, этот промпт добавится в основную сцену.';
 
 export interface SelfPromptFormProps {
   projectId: string;
@@ -114,7 +115,7 @@ const technicalFields: {
 
 const analysisOptions: { id: AnalysisModel; title: string; desc: string; badge?: string }[] = [
   {
-    id: 'gtp-oss-120b',
+    id: 'gpt-oss-120b',
     title: 'OpenAI GPT-OSS 120B',
     desc: 'Базовый, но умный и бесплатный режим без ограничений',
   },
@@ -124,6 +125,12 @@ const analysisOptions: { id: AnalysisModel; title: string; desc: string; badge?:
     desc: 'Режим Супер-Силы ⚡, Vision/Анализ графики',
     badge: '⚡',
   },
+  {
+    id: 'ollama-qwen-2-7b',
+    title: 'Ollama Qwen 2 7B',
+    desc: 'Локальный режим, Без цензуры!',
+    badge: '🚫',
+  }
 ];
 
 function SectionTitle({ children }: { children: ReactNode }) {
@@ -156,7 +163,7 @@ export default function SelfPromptForm({
   const isMagicFlow = selfPrompt.tz_tab === 'magic-flow';
 
   const livePayload = useMemo(() => {
-    const base = {
+  const base = {
       render_settings: renderSettings,
       analysis_model: selfPrompt.analysis_model,
       has_reference: Boolean(selfPrompt.reference_image_url),
@@ -166,14 +173,18 @@ export default function SelfPromptForm({
       return {
         mode: 'raw-parse' as const,
         raw_prompt: selfPrompt.formData.raw_prompt,
-        ...base,
+        render_settings: base.render_settings,        // явно
+        analysis_model: base.analysis_model,          // явно
+        has_reference: base.has_reference,            // явно
       };
     }
 
     return {
       mode: 'self-prompt' as const,
       technical_spec: technicalSpec,
-      ...base,
+      render_settings: base.render_settings,          // явно
+      analysis_model: base.analysis_model,            // явно
+      has_reference: base.has_reference,              // явно
     };
   }, [
     isMagicFlow,
@@ -259,28 +270,45 @@ export default function SelfPromptForm({
         : 'Склеиваем слои Манифеста...'
       );
 
-      const livePayload: DirectPayload = isMagicFlow 
+      const basePayload = {
+        render_settings: renderSettings,
+        analysis_model: selfPrompt.analysis_model,
+        has_reference: Boolean(selfPrompt.reference_image_url),
+      };
+
+      const livePayload: DirectPayload = isMagicFlow
         ? {
-            mode: 'raw-parse',
-            rawPrompt: selfPrompt.formData.raw_prompt, // Передаем текст из "Магического потока"
-            renderSettings: selfPrompt.renderSettings,
+            ...basePayload,
+            mode: 'raw-parse' as const,
+            raw_prompt: selfPrompt.formData.raw_prompt
           }
         : {
-            mode: 'self-prompt',
-            technicalSpec: technicalSpec, // Передаем собранные по слоям данные
-            renderSettings: selfPrompt.renderSettings,
+            ...basePayload,
+            mode: 'self-prompt' as const,
+            technical_spec: technicalSpec,
           };
       
-      // Вызываем наш обновленный пайплайн
-      const res = await sendFlowToPipeline(livePayload, selfPrompt.reference_image_url);
+      let res;
+
+      if (basePayload.has_reference) {
+        res = await sendImageToEdit(livePayload, selfPrompt.reference_image_url);
+      } else {
+        // Вызываем наш обновленный пайплайн
+        res = await sendFlowToPipeline(livePayload, selfPrompt.reference_image_url);
+      }
       
       // 2. Формируем объект обложки для ленты генераций из b64/url ответа бэкенда
+      const strictLayersPrompt = technicalFields
+        .map(field => technicalSpec[field.key])
+        .filter(value => value && value.trim() !== '')
+        .join(' | ');
+
       const cover = {
         art_id: crypto.randomUUID(),
         url: res.imageBase64 || res.imageUrl, // Бэкенд возвращает ImageBase64
         timestamp: new Date().toISOString(),
-        // Сохраняем то, что ушло в Flux: либо сырой текст писателя, либо готовый subject
-        technical_prompt_used: res.technicalPrompt || (isMagicFlow ? selfPrompt.formData.raw_prompt : technicalSpec.subject),
+        // Сохраняем то, что ушло в Flux: либо сырой текст писателя, либо полный технический спек
+        technical_prompt_used: res.technicalPrompt || (isMagicFlow ? selfPrompt.formData.raw_prompt : strictLayersPrompt),
       };
   
       // Добавляем обложку в ленту (Катя сразу видит результат рендера Flux)
@@ -445,7 +473,29 @@ export default function SelfPromptForm({
                     'focus:shadow-[0_0_15px_rgba(34,197,94,0.35),0_0_24px_rgba(139,92,246,0.28)]'
                   }
                 />
-              </div>
+              
+                <div
+                  className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-br from-emerald-500/30 via-cyan-500/20 to-violet-600/30 opacity-60 group-focus-within:opacity-100 group-focus-within:animate-pulse blur-[1px]"
+                  aria-hidden
+                />
+                <textarea
+                  value={selfPrompt.formData.uncensored_raw_prompt}
+                  onChange={(e) => setRawPrompt(e.target.value)}
+                  placeholder={MAGIC_UNCENS_PLACEHOLDER}
+                  rows={14}
+                  spellCheck={false}
+                  className={
+                    'elf-magic-field relative w-full min-h-[18rem] rounded-2xl border border-emerald-500/35 ' +
+                    'bg-[#030712] px-5 py-4 text-sm leading-relaxed text-emerald-50/95 ' +
+                    'placeholder:text-emerald-600/50 placeholder:italic placeholder:leading-relaxed ' +
+                    'shadow-[inset_0_2px_24px_rgba(0,0,0,0.55)] resize-y ' +
+                    'transition-all duration-300 outline-none ' +
+                    'hover:border-cyan-400/40 ' +
+                    'focus:border-violet-400/50 focus:ring-2 focus:ring-emerald-400/25 ' +
+                    'focus:shadow-[0_0_15px_rgba(34,197,94,0.35),0_0_24px_rgba(139,92,246,0.28)]'
+                  }
+                />
+                </div>
             ) : (
               <div className="flex flex-col gap-5" role="tabpanel">
                 {technicalFields.map((field) => (
@@ -594,6 +644,11 @@ export default function SelfPromptForm({
               <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[11px] text-amber-100/90 leading-relaxed">
                 ⚠️ Внимание: Использует лимитированные запросы (до 20 в минуту). Рекомендуется для
                 анализа готовых изображений и сложных правок.
+              </div>
+            )}
+            {selfPrompt.analysis_model === 'ollama-qwen-2-7b' && (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[11px] text-amber-100/90 leading-relaxed">
+                ⚠️ Внимание: Модель не имеет встроенной цензуры кроме минимальной, использовать с осторожностью!
               </div>
             )}
           </section>

@@ -1,0 +1,127 @@
+{
+  "2": {
+    "inputs": {
+      "clip_name": "uncensoredQwen34BLLMForZ_fp8.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "Загрузить CLIP" }
+  },
+  "3": {
+    "inputs": { "vae_name": "ae.safetensors" },
+    "class_type": "VAELoader",
+    "_meta": { "title": "Загрузить VAE" }
+  },
+  "5": {
+    "inputs": {
+      "text": "battle axe, dark steel blade, held by armored knight, dark fantasy style",
+      "clip": ["2", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "Кодирование текста CLIP (Запрос)" }
+  },
+  "6": {
+    "inputs": {
+      "text": "low quality, blurry, plastic, distorted, bad anatomy",
+      "clip": ["2", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "Кодирование текста CLIP (Запрос)" }
+  },
+  "55": {
+    "inputs": {
+      "filename_prefix": "output",
+      "images": ["9", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": { "title": "Сохранить изображение" }
+  },
+  "58": {
+    "inputs": {
+      "lora_name": "Z-Aesthetic-Pro-v1_15.safetensors",
+      "strength_model": 1,
+      "model": ["59", 0]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": { "title": "Загрузчик LoRA (Только модель)" }
+  },
+  "59": {
+    "inputs": { "ckpt_name": "eventHorizon_zitV10.safetensors" },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": { "title": "Загрузить сheckpoint" }
+  },
+  "60": {
+    "inputs": { "image": "draft.png" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Загрузить изображение" }
+  },
+  "25": {
+    "inputs": {
+      "pixels": ["60", 0],
+      "vae": ["3", 0]
+    },
+    "class_type": "VAEEncode",
+    "_meta": { "title": "Кодировать VAE" }
+  },
+  "72": {
+    "inputs": {
+      "mask": ["75", 0],
+      "left": 7,
+      "top": 7,
+      "right": 7,
+      "bottom": 7
+    },
+    "class_type": "FeatherMask",
+    "_meta": { "title": "Пернатая маска" }
+  },
+  "73": {
+    "inputs": {
+      "switch": true,
+      "on_false": ["72", 0],
+      "on_true": ["75", 0]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": { "title": "Переключатель" }
+  },
+  "74": {
+    "inputs": {
+      "samples": ["25", 0],
+      "mask": ["73", 0]
+    },
+    "class_type": "SetLatentNoiseMask",
+    "_meta": { "title": "Установить маску шума латента" }
+  },
+  "4": {
+    "inputs": {
+      "seed": 660741357184303,
+      "steps": 10,
+      "cfg": 2.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "beta",
+      "denoise": 0.75,
+      "model": ["58", 0],
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["74", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler" }
+  },
+  "9": {
+    "inputs": {
+      "samples": ["4", 0],
+      "vae": ["3", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "Декодировать VAE" }
+  },
+  "75": {
+    "inputs": {
+      "image": "mask.png",
+      "channel": "red"
+    },
+    "class_type": "LoadImageMask",
+    "_meta": { "title": "Загрузить изображение (как маску)" }
+  }
+}

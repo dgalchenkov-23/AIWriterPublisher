@@ -1,6 +1,6 @@
 export type AppMode = 'Brainstorm' | 'Self-Prompt' | 'SceneMaker' | 'Typography';
 
-export type AnalysisModel = 'gpt-oss-120b' | 'gemini-flash';
+export type AnalysisModel = 'gpt-oss-120b' | 'gemini-flash' | 'ollama-qwen-2-7b';
 
 export type SelfPromptTzTab = 'magic-flow' | 'strict-layers';
 
@@ -31,6 +31,7 @@ export interface RenderSettings {
 
 export interface SelfPromptFormData {
   raw_prompt: string;
+  uncensored_raw_prompt: string;
 }
 
 export interface SelfPromptState {

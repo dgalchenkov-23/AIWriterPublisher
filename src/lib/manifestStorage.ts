@@ -115,7 +115,7 @@ function sanitizeRenderSettings(raw: unknown, defaults: RenderSettings): RenderS
 }
 
 function isAnalysisModel(value: unknown): value is AnalysisModel {
-  return value === 'groq-llama-3' || value === 'gemini-flash';
+  return value === 'gpt-oss-120b' || value === 'gemini-flash' || value === 'ollama-qwen-2-7b';
 }
 
 function isTzTab(value: unknown): value is SelfPromptTzTab {
