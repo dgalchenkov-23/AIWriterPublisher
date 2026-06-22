@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -24,6 +25,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     private readonly ILogger<ComfyUiImageGenerator> _logger;
     private const string ComfyUrl = "http://127.0.0.1:8188"; // Стандартный порт ComfyUI
     private readonly LoraOrchestrationService _loraOrchestrator;
+    private readonly ZImageGraphOrchestrator optimizeGraph;
 
     public ComfyUiImageGenerator(HttpClient httpClient, ILogger<ComfyUiImageGenerator> logger, LoraOrchestrationService loraOrchestrator)
     {
@@ -31,6 +33,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         _httpClient.Timeout = TimeSpan.FromMinutes(5); // 5 минут на генерацию
         _logger = logger;
         _loraOrchestrator = loraOrchestrator;
+        _optimizeGraph = optimizeGraph;
     }
 
     /// <summary>
@@ -69,136 +72,117 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         return await GenerateEventHorizonAsync(technicalPrompt, "", artArchitectorSpec, analysisModel);
     }
 
-    public class LoraConfig
-    {
-        public string LoraName { get; set; }
-        public double StrengthModel { get; set; } = 1.0;
-        public double StrengthClip { get; set; } = 1.0;
-    }
-
     public class ComfyUiGraphOrchestrator
     {
-        public static string InjectLoraChainIntoGraph(string jsonGraph, List<LoraConfig> lorasToInject)
+        public static string InjectLoraChainIntoGraph(string jsonGraph, List<LoraConfig> lorasToInject, string manifestJsonContent)
         {
             var graph = JObject.Parse(jsonGraph);
-            // 1. Динамически определяем базовые источники, читая их из ноды "12", пока она жива
-            JArray baseModelInput;
-            JArray baseClipInput;
-
-            if (graph["12"] != null && graph["12"]["inputs"] != null)
+            
+            // 1. Пытаемся собрать оверрайды из ответа ИИ
+            Dictionary<string, object>? activeOverrides = null;
+            if (lorasToInject != null)
             {
-                // Берём оригинальные линки, которые были прописаны в шаблоне
-                baseModelInput = (JArray)graph["12"]["inputs"]["model"];
-                baseClipInput = (JArray)graph["12"]["inputs"]["clip"];
-            }
-            else
-            {
-                // Резервный фолбэк на случай, если ноду 12 уже кто-то стер, но мы знаем дефолты
-                baseModelInput = new JArray { "4", 0 };
-                baseClipInput = new JArray { "10", 0 };
-            }
-
-            // 2. Определяем, куда шел выход из последней дефолтной LoRA (ноды "13")
-            // Нам нужно найти ноду, которая потребляла ["13", 0] и ["13", 1]
-            string targetNodeIdForModel = null;
-            string targetModelKey = null;
-            string targetNodeIdForClip = null;
-            string targetClipKey = null;
-
-            foreach (var property in graph.Properties())
-            {
-                var node = property.Value as JObject;
-                if (node == null || node["inputs"] == null) continue;
-
-                foreach (var inputProp in ((JObject)node["inputs"]).Properties())
+                var loraWithOverrides = lorasToInject.FirstOrDefault(l => l.Overrides != null && l.Overrides.Count > 0);
+                if (loraWithOverrides != null)
                 {
-                    if (inputProp.Value.Type == JTokenType.Array)
+                    activeOverrides = loraWithOverrides.Overrides;
+                }
+            }
+
+            // КОРРЕКЦИЯ: Если ИИ вернул пустые Overrides, вытаскиваем их напрямую из манифеста по FileName
+            if ((activeOverrides == null || activeOverrides.Count == 0) && lorasToInject != null && !string.IsNullOrEmpty(manifestJsonContent))
+            {
+                try
+                {
+                    var manifest = JObject.Parse(manifestJsonContent);
+                    var availableLoras = manifest["AvailableLoras"] as JArray;
+                    
+                    if (availableLoras != null)
                     {
-                        var link = (JArray)inputProp.Value;
-                        if (link.Count == 2)
+                        // Ищем среди выбранных LoRA ту, у которой в манифесте есть непустой Overrides
+                        foreach (var selectedLora in lorasToInject)
                         {
-                            if (link[0].ToString() == "13" && link[1].Value<int>() == 0)
+                            var manifestLora = availableLoras.FirstOrDefault(l => 
+                                string.Equals(l["FileName"]?.ToString(), selectedLora.LoraName, StringComparison.OrdinalIgnoreCase));
+                            
+                            if (manifestLora != null && manifestLora["Overrides"] != null && manifestLora["Overrides"].HasValues)
                             {
-                                targetNodeIdForModel = property.Name;
-                                targetModelKey = inputProp.Name;
-                            }
-                            if (link[0].ToString() == "13" && link[1].Value<int>() == 1)
-                            {
-                                targetNodeIdForClip = property.Name;
-                                targetClipKey = inputProp.Name;
+                                activeOverrides = manifestLora["Overrides"].ToObject<Dictionary<string, object>>();
+                                break; // Нашли базовые настройки движка (например, от CCD или Aesthetic)
                             }
                         }
                     }
                 }
-            }
-
-            // Если не нашли куда шла 13-я нода, значит граф изменен, бросаем исключение
-            if (targetNodeIdForModel == null || targetNodeIdForClip == null)
-            {
-                throw new Exception("Не удалось найти конечные узлы-потребители для дефолтной LoRA цепочки (нода 13).");
-            }
-
-            // 3. Удаляем старые жестко зашитые ноды 12 и 13, чтобы они не мусорили
-            graph.Remove("12");
-            graph.Remove("13");
-
-            // Если пользователь не выбрал ни одной LoRA, соединяем напрямую базы с таргетами
-            if (lorasToInject == null || lorasToInject.Count == 0)
-            {
-                graph[targetNodeIdForModel]["inputs"][targetModelKey] = baseModelInput;
-                graph[targetNodeIdForClip]["inputs"][targetClipKey] = baseClipInput;
-                return graph.ToString();
-            }
-
-            // 4. Вычисляем стартовый ID для новых нод
-            int currentMaxId = graph.Properties()
-                .Select(p => int.TryParse(p.Name, out int id) ? id : 0)
-                .Max();
-
-            int nextNodeId = currentMaxId + 1;
-
-            // Переменные для отслеживания текущего "хвоста" линковки
-            JArray currentModelLink = baseModelInput;
-            JArray currentClipLink = baseClipInput;
-
-            // 5. Динамически строим цепочку LoRA
-            for (int i = 0; i < lorasToInject.Count; i++)
-            {
-                var lora = lorasToInject[i];
-                string newLoraNodeId = nextNodeId.ToString();
-                nextNodeId++;
-
-                // Создаем JSON-структуру для ноды LoraLoader
-                var loraNode = new JObject
+                catch (Exception ex)
                 {
-                    ["inputs"] = new JObject
-                    {
-                        ["lora_name"] = lora.LoraName,
-                        ["strength_model"] = lora.StrengthModel,
-                        ["strength_clip"] = lora.StrengthClip,
-                        ["model"] = currentModelLink, // Подключаем к предыдущему звену
-                        ["clip"] = currentClipLink    // Подключаем к предыдущему звену
-                    },
-                    ["class_type"] = "LoraLoader",
-                    ["_meta"] = new JObject
-                    {
-                        ["title"] = $"Динамическая LoRA {i + 1}: {lora.LoraName}"
-                    }
-                };
-
-                // Добавляем ноду в граф
-                graph[newLoraNodeId] = loraNode;
-
-                // Теперь это звено становится "источником" для следующего шага
-                currentModelLink = new JArray { newLoraNodeId, 0 };
-                currentClipLink = new JArray { newLoraNodeId, 1 };
+                    // Логируем или обрабатываем ошибку парсинга манифеста, если нужно
+                    Console.WriteLine($"Ошибка автоподтягивания оверрайдов из манифеста: {ex.Message}");
+                }
             }
 
-            // 6. Замыкаем цепочку: подключаем выходы последней созданной LoRA к таргетам
-            graph[targetNodeIdForModel]["inputs"][targetModelKey] = currentModelLink;
-            graph[targetNodeIdForClip]["inputs"][targetClipKey] = currentClipLink;
+            // 2. Применяем оверрайды к KSampler (Нода "6")
+            if (activeOverrides != null && graph["6"] != null && graph["6"]["inputs"] != null)
+            {
+                var kSamplerInputs = graph["6"]["inputs"];
 
-            return graph.ToString();
+                if (activeOverrides.TryGetValue("Steps", out var steps))
+                {
+                    kSamplerInputs["steps"] = Convert.ToInt32(steps);
+                }
+                
+                if (activeOverrides.TryGetValue("CFG", out var cfg))
+                {
+                    kSamplerInputs["cfg"] = Convert.ToDouble(cfg);
+                }
+
+                if (activeOverrides.TryGetValue("Sampler", out var sampler))
+                {
+                    kSamplerInputs["sampler_name"] = sampler.ToString()?.ToLowerInvariant();
+                }
+
+                if (activeOverrides.TryGetValue("Scheduler", out var scheduler))
+                {
+                    kSamplerInputs["scheduler"] = scheduler.ToString()?.ToLowerInvariant();
+                }
+            }
+
+            // 3. Инжекция цепочки в Power Lora Loader (Нода "8")
+            if (graph["8"] != null && graph["8"]["inputs"] != null)
+            {
+                var loraLoaderInputs = (JObject)graph["8"]["inputs"];
+                
+                // Чистим старые слоты lora_
+                var keysToRemove = loraLoaderInputs.Properties()
+                    .Select(p => p.Name)
+                    .Where(name => name.StartsWith("lora_", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var key in keysToRemove)
+                {
+                    loraLoaderInputs.Remove(key);
+                }
+
+                // Наполняем новыми
+                if (lorasToInject != null && lorasToInject.Count > 0)
+                {
+                    for (int i = 0; i < lorasToInject.Count; i++)
+                    {
+                        var lora = lorasToInject[i];
+                        int slotIndex = i + 1;
+
+                        var loraObject = new JObject
+                        {
+                            ["on"] = true,
+                            ["lora"] = lora.LoraName,
+                            ["strength"] = lora.StrengthModel
+                        };
+
+                        loraLoaderInputs[$"lora_{slotIndex}"] = loraObject;
+                    }
+                }
+            }
+            
+            return graph.ToString(Newtonsoft.Json.Formatting.None);
         }
     }
 
@@ -480,14 +464,14 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     {
         try
         {
-            string workflowPath = Path.Combine(AppContext.BaseDirectory, "EventHorizon.json");
+            string workflowPath = Path.Combine(AppContext.BaseDirectory, "ZIT_Heretic.json");
             if (!File.Exists(workflowPath))
             {
                 throw new FileNotFoundException($"Шаблон графа ComfyUI не найден: {workflowPath}");
             }
 
             string workflowJson = await File.ReadAllTextAsync(workflowPath);
-            Console.WriteLine($"[ComfyUI] Шаблон графа EventHorizon загружен. Подготовка к генерации... готовит промпт модель: {analysisModel}");
+            Console.WriteLine($"[ComfyUI] Шаблон графа Juggernaut XL загружен. Подготовка к генерации... готовит промпт модель: {analysisModel}");
             // 1. Запрашиваем у ИИ-оркестратора Лоры на основе входящего промпта
             // Передаем "All" или дефолтный жанр, так как ИИ-агент внутри сам разберется по контексту текста
             var selectedLoras = await _loraOrchestrator.PrepareLorasForGenerationAsync("All", artArchitectorSpec, analysisModel);
@@ -507,33 +491,51 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
                 Console.WriteLine($"[ComfyUI] Промпт обогащен триггерами: {positivePrompt}");
             }
 
-            // 3. Мапим в LoraConfig для врезки файлов в ноды
+            /// 3. Мапим в LoraConfig для врезки файлов в ноды
             var lorasToInject = selectedLoras.Select(l => new LoraConfig
             {
                 LoraName = l.FileName,
                 StrengthModel = l.StrengthModel,
-                StrengthClip = l.StrengthClip
+                StrengthClip = l.StrengthClip,
+                Overrides = l.Overrides // КРИТИЧЕСКИ ВАЖНО: передаем оверрайды, которые вернул ИИ
             }).ToList();
 
-            // 4. Вот теперь передаем в оркестратора граф и Лоры для динамической врезки цепочки
-            string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject);
+            // 4. ПОДСТРАХОВКА: Считываем оригинальный манифест с диска
+            // Берём путь к lora_manifest.json (предполагаем, что он лежит рядом с билдом или в корне проекта)
+            string manifestPath = Path.Combine(AppContext.BaseDirectory, "lora_manifest.json");
+            string rawManifestJson = File.Exists(manifestPath) 
+                ? await File.ReadAllTextAsync(manifestPath) 
+                : string.Empty;
+
+            if (string.IsNullOrEmpty(rawManifestJson))
+            {
+                Console.WriteLine("[ComfyUI] ПРЕДУПРЕЖДЕНИЕ: Файл lora_manifest.json не найден по пути: " + manifestPath + ". Автоподтягивание оверрайдов из кода работать не будет.");
+            }
+
+            // Передаем граф, подготовленный стек Лор и сырой манифест
+            string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject, rawManifestJson);
 
             var graph = JsonNode.Parse(loraGraph)?.AsObject();
+            //var graph = JsonNode.Parse(workflowJson)?.AsObject();
 
             if (graph == null) throw new InvalidOperationException("Не удалось распарсить JSON.");
 
-            string positiveNodeId = "6"; 
+            // Нода 5: CLIPTextEncode (Positive Prompt)
+            string positiveNodeId = "5";
             if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)
             {
+                // У CLIPTextEncode поле называется "text", а не "positive"
                 posInputs["text"] = positivePrompt;
             }
 
-            string negativeNodeId = "7"; 
+            // Нода 4: CLIPTextEncode (Negative Prompt)
+            string negativeNodeId = "4";
             if (graph.TryGetPropertyValue(negativeNodeId, out var negNode) && negNode?["inputs"] is JsonObject negInputs)
             {
+                // У CLIPTextEncode поле называется "text", а не "negative"
                 negInputs["text"] = negativePrompt;
             }
-
+            Console.WriteLine($"Полный граф: \r\n {graph.ToString()}");
             await CheckComfyUiHealthAsync();
 
             var requestBody = new JsonObject { ["prompt"] = graph };
@@ -542,7 +544,11 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
             string jsonResponse = await response.Content.ReadAsStringAsync();
             // var queueResult = JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            var queueResult = JsonConvert.DeserializeObject<ComfyQueueResponse>(jsonResponse);
+            // var queueResult = JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse);
+            var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var queueResult = System.Text.Json.JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, options);
+
+            Console.WriteLine($"[ComfyUI] получили результат очереди: {queueResult.PromptId}");
             
             var generationResult = await PollAndGetResultAsync(queueResult!.PromptId);
 
@@ -594,18 +600,84 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         string? fileName = null;
         string? subFolder = null;
         bool isCompleted = false;
-        int maxAttempts = 120;
-
-        for (int i = 0; i < maxAttempts; i++)
+        
+        // 1. Пробуем WebSocket для мгновенного уведомления
+        try
         {
-            await Task.Delay(5000);
-
-            var historyResponse = await _httpClient.GetAsync($"{ComfyUrl}/history/{promptId}");
-            if (!historyResponse.IsSuccessStatusCode) continue;
-
-            string historyJson = await historyResponse.Content.ReadAsStringAsync();
+            using var ws = new ClientWebSocket();
+            var wsUrl = $"{ComfyUrl.Replace("http", "ws")}/ws?clientId={Guid.NewGuid():N}";
+            await ws.ConnectAsync(new Uri(wsUrl), CancellationToken.None);
+            
+            // Ждём уведомления о завершении (максимум 30 секунд)
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var buffer = new byte[4096];
+            
+            while (!isCompleted && !cts.Token.IsCancellationRequested)
+            {
+                var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                
+                // Ищем событие завершения для нашего prompt_id
+                if (message.Contains($"\"prompt_id\": \"{promptId}\"") && 
+                    (message.Contains("\"type\": \"executing\"") || 
+                    message.Contains("\"type\": \"executed\"")))
+                {
+                    _logger.LogInformation("[ComfyUI] WebSocket получил уведомление о завершении генерации");
+                    isCompleted = true;
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[ComfyUI] WebSocket не удалось использовать, переключаемся на polling");
+            // WebSocket не сработал — продолжаем с polling
+        }
+        
+        // 2. Если WebSocket не сработал или не дождался — используем polling (как раньше)
+        if (!isCompleted)
+        {
+            _logger.LogInformation("[ComfyUI] Начинаем polling для проверки завершения генерации");
+            
+            int maxAttempts = 120;
+            for (int i = 0; i < maxAttempts; i++)
+            {
+                await Task.Delay(5000);
+                
+                var historyResponse = await _httpClient.GetAsync($"{ComfyUrl}/history/{promptId}");
+                if (!historyResponse.IsSuccessStatusCode) continue;
+                
+                string historyJson = await historyResponse.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(historyJson);
+                
+                if (doc.RootElement.TryGetProperty(promptId, out var taskDetails))
+                {
+                    if (taskDetails.TryGetProperty("outputs", out var outputs))
+                    {
+                        foreach (var nodeOutput in outputs.EnumerateObject())
+                        {
+                            if (nodeOutput.Value.TryGetProperty("images", out var images) && images.GetArrayLength() > 0)
+                            {
+                                var firstImage = images[0];
+                                fileName = firstImage.GetProperty("filename").GetString();
+                                if (firstImage.TryGetProperty("subfolder", out var subProp))
+                                    subFolder = subProp.GetString();
+                                isCompleted = true;
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        else
+        {
+            // Если WebSocket сработал — нужно скачать результат
+            // Получаем список файлов из output
+            string historyJson = await _httpClient.GetStringAsync($"{ComfyUrl}/history/{promptId}");
             using var doc = JsonDocument.Parse(historyJson);
-
+            
             if (doc.RootElement.TryGetProperty(promptId, out var taskDetails))
             {
                 if (taskDetails.TryGetProperty("outputs", out var outputs))
@@ -618,27 +690,26 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
                             fileName = firstImage.GetProperty("filename").GetString();
                             if (firstImage.TryGetProperty("subfolder", out var subProp))
                                 subFolder = subProp.GetString();
-                            isCompleted = true;
                             break;
                         }
                     }
                 }
-                break;
             }
         }
-
+        
+        // 3. Если результат не получен — таймаут
         if (!isCompleted || string.IsNullOrEmpty(fileName))
             throw new TimeoutException("Превышено время ожидания генерации в ComfyUI.");
-
-        // Скачиваем изображение для base64
+        
+        // 4. Скачиваем изображение
         string viewUrl = $"{ComfyUrl}/view?filename={Uri.EscapeDataString(fileName)}&type=output";
         if (!string.IsNullOrEmpty(subFolder))
             viewUrl += $"&subfolder={Uri.EscapeDataString(subFolder)}";
-
+        
         byte[] imageBytes = await _httpClient.GetByteArrayAsync(viewUrl);
         string base64 = $"data:image/png;base64,{Convert.ToBase64String(imageBytes)}";
         
-        // Сохраняем локально для истории (опционально)
+        // Сохраняем локально
         string outputDirectory = Path.Combine(AppContext.BaseDirectory, "covers");
         if (!Directory.Exists(outputDirectory)) 
             Directory.CreateDirectory(outputDirectory);
@@ -655,9 +726,3 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     }
 }
 
-// Вспомогательный DTO класс для десериализации ответа очереди
-public class ComfyQueueResponse
-{
-    [System.Text.Json.Serialization.JsonPropertyName("prompt_id")]
-    public string PromptId { get; set; } = string.Empty;
-}

@@ -80,3 +80,6 @@ C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\EventHorizon_Img2Img_A.json
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\EventHorizon_Img2Img_B.json
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\firered-image-edit-1.1_Edit_AICS.json
+C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\SDXL_Txt2Img.json
+C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\lora_manifest_old.json
+C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\ZIT_Heretic.json

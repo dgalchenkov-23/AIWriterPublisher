@@ -1,0 +1,192 @@
+{
+  "1": {
+    "inputs": {
+      "width": [
+        "2",
+        0
+      ],
+      "height": [
+        "2",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "Пустой SD3LatentImage"
+    }
+  },
+  "2": {
+    "inputs": {
+      "megapixel": "1.0",
+      "aspect_ratio": "3:4 (Golden Ratio)",
+      "divisible_by": "64",
+      "custom_ratio": false,
+      "custom_aspect_ratio": "1:1"
+    },
+    "class_type": "FluxResolutionNode",
+    "_meta": {
+      "title": "Flux Resolution Calc"
+    }
+  },
+  "3": {
+    "inputs": {
+      "filename_prefix": "Zimage_Txt2Image/ComfyUI_",
+      "images": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Сохранить изображение"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "blurry, ugly, bad quality, expensive arms ",
+      "clip": [
+        "8",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "Обложка. Высокий, элегантный блондинистый эльф в серебристых доспехах с мечом в руках стоит на колене возле трона. На троне сидит невысокая молодая женщина с бледной кожей, черными волосами и глазами. Ее черное платье с тугим корсетом и пышными юбками подчеркивает ее осанку. Прическа \"помпадур\" с двумя волнами локонов держит тонкую изящную корону. Фоном служит тронный зал, затянутый  черными розами.",
+      "clip": [
+        "8",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "6": {
+    "inputs": {
+      "seed": 537580774849261,
+      "steps": 14,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "8",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ],
+      "latent_image": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "7": {
+    "inputs": {
+      "samples": [
+        "6",
+        0
+      ],
+      "vae": [
+        "14",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Декодировать VAE"
+    }
+  },
+  "8": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "10",
+        0
+      ],
+      "clip": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
+    }
+  },
+  "9": {
+    "inputs": {
+      "sage_attention": "disabled",
+      "allow_compile": false,
+      "model": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "10": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "Выборка модели AuraFlow"
+    }
+  },
+  "11": {
+    "inputs": {
+      "ckpt_name": "zImageTurboFP8Kijai_fp8ScaledE4m3fn.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Загрузить сheckpoint"
+    }
+  },
+  "13": {
+    "inputs": {
+      "clip_name": "Qwen3-4b-Uncensored-Z-Image-Engineer-V4-Q8_0.gguf",
+      "type": "stable_diffusion"
+    },
+    "class_type": "CLIPLoaderGGUF",
+    "_meta": {
+      "title": "CLIPLoader (GGUF)"
+    }
+  },
+  "14": {
+    "inputs": {
+      "vae_name": "zImageTurbo_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Загрузить VAE"
+    }
+  }
+}

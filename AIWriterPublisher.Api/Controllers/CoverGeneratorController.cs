@@ -197,7 +197,7 @@ namespace AIWriterPublisher.Api.Controllers
                     _logger.LogInformation("[Z-Image] Инжекция в ComfyUI. Промпт: {P}", editSpec.PromptOverride);
                     
                     // Вызываем метод, принимающий полный DTO спецификации
-                    string resultBase64 = await comfyGenerator.EditImageWithFireRedAsync(editSpec);
+                    string resultBase64 = "0";//await comfyGenerator.EditImageWithFireRedAsync(editSpec);
 
                     return Ok(new DirectGenerationResponse 
                     { 

@@ -1,0 +1,161 @@
+{
+  "5": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "steps": 50,
+      "cfg": 5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "simple",
+      "seed": 988845148928940
+    },
+    "class_type": "UmeAiRT_GenerationSettings",
+    "_meta": {
+      "title": "⬡ Generation Settings"
+    }
+  },
+  "6": {
+    "inputs": {
+      "positive": "photorealistic, detailed, sharp focus, cinematic lighting, 8k, high resolution, \ncolonial-style town, resembling the 19th century, set in a tropical mountainous region. \nNighttime, a dust storm has swept through, covering all vegetation with dust. \nA patrol of 3 men walks through the town, and they cross paths with a female officer. \nTheir uniforms are dirty, dust-covered shirts and cargo pants. \nThe patrol carries only one rifle among them. \nThe officer wears a belt with a holster, her long red hair tied up in a messy bun. \nNo formal greetings, just a passing encounter. The atmosphere is deceptively calm."
+    },
+    "class_type": "UmeAiRT_Positive_Input",
+    "_meta": {
+      "title": "⬡ Positive Prompt Input"
+    }
+  },
+  "7": {
+    "inputs": {
+      "negative": "blurry, distorted, ugly, low resolution, malformed, grainy, error, jpeg artifacts, duplicate, poorly drawn"
+    },
+    "class_type": "UmeAiRT_Negative_Input",
+    "_meta": {
+      "title": "⬡ Negative Prompt Input"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename": "SDXL/%date/%time_%seed",
+      "gen_pipe": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "UmeAiRT_PipelineImageSaver",
+    "_meta": {
+      "title": "⬡ Image Saver"
+    }
+  },
+  "12": {
+    "inputs": {
+      "lora_1_on": false,
+      "lora_1_name": "None",
+      "lora_1_strength": 1,
+      "lora_2_on": false,
+      "lora_2_name": "None",
+      "lora_2_strength": 1,
+      "lora_3_on": false,
+      "lora_3_name": "None",
+      "lora_3_strength": 1
+    },
+    "class_type": "UmeAiRT_LoraBlock_3",
+    "_meta": {
+      "title": "⬡ LoRA 3x"
+    }
+  },
+  "23": {
+    "inputs": {
+      "enabled": true,
+      "subject": "face",
+      "denoise": 0.5,
+      "guide_size": 512,
+      "max_size": 1024,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 3,
+      "drop_size": 10,
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "gen_pipe": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "UmeAiRT_PipelineSubjectDetailer",
+    "_meta": {
+      "title": "⬡ Subject Detailer"
+    }
+  },
+  "30": {
+    "inputs": {
+      "enabled": false,
+      "model": "4x_NMKD-Siax_200k.pth",
+      "upscale_by": 2,
+      "denoise": 0.35,
+      "clean_prompt": true,
+      "upscale_steps": 0,
+      "upscale_cfg": 1,
+      "upscale_sampler": "Pipeline",
+      "upscale_scheduler": "Pipeline",
+      "mode_type": "Linear",
+      "tile_width": 1024,
+      "tile_height": 1024,
+      "mask_blur": 8,
+      "tile_padding": 32,
+      "seam_fix_mode": "None",
+      "seam_fix_denoise": 1,
+      "seam_fix_width": 64,
+      "seam_fix_mask_blur": 8,
+      "seam_fix_padding": 16,
+      "force_uniform_tiles": true,
+      "tiled_decode": false,
+      "gen_pipe": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "UmeAiRT_PipelineUltimateUpscale",
+    "_meta": {
+      "title": "⬡ UltimateSD Upscale"
+    }
+  },
+  "31": {
+    "inputs": {
+      "ckpt_name": "cyberrealisticXL_v100.safetensors",
+      "vae_name": "sdxl_vae.safetensors",
+      "clip_skip": 1
+    },
+    "class_type": "UmeAiRT_FilesSettings_Checkpoint",
+    "_meta": {
+      "title": "⬡ Checkpoint Loader"
+    }
+  },
+  "33": {
+    "inputs": {
+      "model_bundle": [
+        "31",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "settings": [
+        "5",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "loras": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "UmeAiRT_BlockSampler",
+    "_meta": {
+      "title": "⬡ Image Generator"
+    }
+  }
+}
