@@ -25,15 +25,15 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     private readonly ILogger<ComfyUiImageGenerator> _logger;
     private const string ComfyUrl = "http://127.0.0.1:8188"; // Стандартный порт ComfyUI
     private readonly LoraOrchestrationService _loraOrchestrator;
-    private readonly ZImageGraphOrchestrator optimizeGraph;
+    private readonly ZImageGraphOrchestrator _zImageOrchestrator;
 
-    public ComfyUiImageGenerator(HttpClient httpClient, ILogger<ComfyUiImageGenerator> logger, LoraOrchestrationService loraOrchestrator)
+    public ComfyUiImageGenerator(HttpClient httpClient, ILogger<ComfyUiImageGenerator> logger, LoraOrchestrationService loraOrchestrator, ZImageGraphOrchestrator zImageOrchestrator)
     {
         _httpClient = httpClient;
         _httpClient.Timeout = TimeSpan.FromMinutes(5); // 5 минут на генерацию
         _logger = logger;
         _loraOrchestrator = loraOrchestrator;
-        _optimizeGraph = optimizeGraph;
+        _zImageOrchestrator = zImageOrchestrator;
     }
 
     /// <summary>
@@ -74,77 +74,20 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
     public class ComfyUiGraphOrchestrator
     {
-        public static string InjectLoraChainIntoGraph(string jsonGraph, List<LoraConfig> lorasToInject, string manifestJsonContent)
+        public static string InjectLoraChainIntoGraph(string jsonGraph, List<LoraConfig> lorasToInject, string manifestJsonContent, ZImageGraphOrchestrator orchestrator)
         {
             var graph = JObject.Parse(jsonGraph);
+           
             
-            // 1. Пытаемся собрать оверрайды из ответа ИИ
-            Dictionary<string, object>? activeOverrides = null;
-            if (lorasToInject != null)
-            {
-                var loraWithOverrides = lorasToInject.FirstOrDefault(l => l.Overrides != null && l.Overrides.Count > 0);
-                if (loraWithOverrides != null)
-                {
-                    activeOverrides = loraWithOverrides.Overrides;
-                }
-            }
+            // 1. Получили сырой ответ от Лораведа и десериализовали в List<LoraConfig> aiLoras
+            var optimizationResult = orchestrator.OptimizeGraph(lorasToInject);
 
-            // КОРРЕКЦИЯ: Если ИИ вернул пустые Overrides, вытаскиваем их напрямую из манифеста по FileName
-            if ((activeOverrides == null || activeOverrides.Count == 0) && lorasToInject != null && !string.IsNullOrEmpty(manifestJsonContent))
-            {
-                try
-                {
-                    var manifest = JObject.Parse(manifestJsonContent);
-                    var availableLoras = manifest["AvailableLoras"] as JArray;
-                    
-                    if (availableLoras != null)
-                    {
-                        // Ищем среди выбранных LoRA ту, у которой в манифесте есть непустой Overrides
-                        foreach (var selectedLora in lorasToInject)
-                        {
-                            var manifestLora = availableLoras.FirstOrDefault(l => 
-                                string.Equals(l["FileName"]?.ToString(), selectedLora.LoraName, StringComparison.OrdinalIgnoreCase));
-                            
-                            if (manifestLora != null && manifestLora["Overrides"] != null && manifestLora["Overrides"].HasValues)
-                            {
-                                activeOverrides = manifestLora["Overrides"].ToObject<Dictionary<string, object>>();
-                                break; // Нашли базовые настройки движка (например, от CCD или Aesthetic)
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Логируем или обрабатываем ошибку парсинга манифеста, если нужно
-                    Console.WriteLine($"Ошибка автоподтягивания оверрайдов из манифеста: {ex.Message}");
-                }
-            }
-
-            // 2. Применяем оверрайды к KSampler (Нода "6")
-            if (activeOverrides != null && graph["6"] != null && graph["6"]["inputs"] != null)
-            {
-                var kSamplerInputs = graph["6"]["inputs"];
-
-                if (activeOverrides.TryGetValue("Steps", out var steps))
-                {
-                    kSamplerInputs["steps"] = Convert.ToInt32(steps);
-                }
-                
-                if (activeOverrides.TryGetValue("CFG", out var cfg))
-                {
-                    kSamplerInputs["cfg"] = Convert.ToDouble(cfg);
-                }
-
-                if (activeOverrides.TryGetValue("Sampler", out var sampler))
-                {
-                    kSamplerInputs["sampler_name"] = sampler.ToString()?.ToLowerInvariant();
-                }
-
-                if (activeOverrides.TryGetValue("Scheduler", out var scheduler))
-                {
-                    kSamplerInputs["scheduler"] = scheduler.ToString()?.ToLowerInvariant();
-                }
-            }
+            // 2. Мапим настройки KSampler (Нода "6")
+            var kSamplerInputs = graph["6"]["inputs"];
+            kSamplerInputs["steps"] = optimizationResult.SamplerSettings.Steps;
+            kSamplerInputs["cfg"] = optimizationResult.SamplerSettings.Cfg;
+            kSamplerInputs["sampler_name"] = optimizationResult.SamplerSettings.SamplerName;
+            kSamplerInputs["scheduler"] = optimizationResult.SamplerSettings.Scheduler;
 
             // 3. Инжекция цепочки в Power Lora Loader (Нода "8")
             if (graph["8"] != null && graph["8"]["inputs"] != null)
@@ -163,17 +106,17 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
                 }
 
                 // Наполняем новыми
-                if (lorasToInject != null && lorasToInject.Count > 0)
+                if (optimizationResult.PatchedLoras != null && optimizationResult.PatchedLoras.Count > 0)
                 {
-                    for (int i = 0; i < lorasToInject.Count; i++)
+                    for (int i = 0; i < optimizationResult.PatchedLoras.Count; i++)
                     {
-                        var lora = lorasToInject[i];
+                        var lora = optimizationResult.PatchedLoras[i];
                         int slotIndex = i + 1;
 
                         var loraObject = new JObject
                         {
                             ["on"] = true,
-                            ["lora"] = lora.LoraName,
+                            ["lora"] = lora.FileName,
                             ["strength"] = lora.StrengthModel
                         };
 
@@ -494,10 +437,10 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             /// 3. Мапим в LoraConfig для врезки файлов в ноды
             var lorasToInject = selectedLoras.Select(l => new LoraConfig
             {
-                LoraName = l.FileName,
+                DisplayName = l.DisplayName,
+                FileName = l.FileName,
                 StrengthModel = l.StrengthModel,
-                StrengthClip = l.StrengthClip,
-                Overrides = l.Overrides // КРИТИЧЕСКИ ВАЖНО: передаем оверрайды, которые вернул ИИ
+                StrengthClip = l.StrengthClip
             }).ToList();
 
             // 4. ПОДСТРАХОВКА: Считываем оригинальный манифест с диска
@@ -513,7 +456,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             }
 
             // Передаем граф, подготовленный стек Лор и сырой манифест
-            string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject, rawManifestJson);
+            string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject, rawManifestJson, _zImageOrchestrator);
 
             var graph = JsonNode.Parse(loraGraph)?.AsObject();
             //var graph = JsonNode.Parse(workflowJson)?.AsObject();
@@ -535,7 +478,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
                 // У CLIPTextEncode поле называется "text", а не "negative"
                 negInputs["text"] = negativePrompt;
             }
-            Console.WriteLine($"Полный граф: \r\n {graph.ToString()}");
+            //Console.WriteLine($"Полный граф: \r\n {graph.ToString()}");
             await CheckComfyUiHealthAsync();
 
             var requestBody = new JsonObject { ["prompt"] = graph };
@@ -543,8 +486,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             response.EnsureSuccessStatusCode();
 
             string jsonResponse = await response.Content.ReadAsStringAsync();
-            // var queueResult = JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            // var queueResult = JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse);
+
             var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             var queueResult = System.Text.Json.JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, options);
 

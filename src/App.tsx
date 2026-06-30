@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import { loadManifestFromStorage, persistManifest } from './lib/manifestStorage';
+import { applyAspectRatioToRenderSettings } from './lib/applyConceptToSelfPrompt';
+import BrainstormPanel from './modules/brainstorm/components/BrainstormPanel';
 import SelfPromptForm from './modules/self-prompt/components/SelfPromptForm';
+import type { ArtConcept } from './types/artConcept';
 import type {
   AppMode,
   GeneratedCover,
@@ -12,7 +15,7 @@ import type {
 } from './types/manifest';
 
 const modeLabels: Record<AppMode, string> = {
-  Brainstorm: 'Brainstorm',
+  Brainstorm: 'Гримуар идей',
   'Self-Prompt': 'Direct Prompt',
   SceneMaker: 'Scene Maker',
   Typography: 'Типографика',
@@ -41,6 +44,29 @@ export default function App() {
     setManifest((prev) => ({ ...prev, self_prompt: selfPrompt }));
   }, []);
 
+  const handleTransferConceptToForge = useCallback((concept: ArtConcept) => {
+    setManifest((prev) => ({
+      ...prev,
+      current_mode: 'Self-Prompt',
+      self_prompt: {
+        ...prev.self_prompt,
+        tz_tab: 'magic-flow',
+        formData: {
+          ...prev.self_prompt.formData,
+          raw_prompt: concept.rawPrompt,
+        },
+      },
+      render_settings: applyAspectRatioToRenderSettings(
+        concept.aspectRatio,
+        prev.render_settings,
+      ),
+      style_presets: {
+        ...prev.style_presets,
+        aesthetic: concept.title,
+      },
+    }));
+  }, []);
+
   const addGeneration = useCallback((cover: GeneratedCover) => {
     setManifest((prev) => ({
       ...prev,
@@ -60,30 +86,37 @@ export default function App() {
 
   const { current_mode, generation_history } = manifest;
   const isSelfPrompt = current_mode === 'Self-Prompt';
+  const isBrainstorm = current_mode === 'Brainstorm';
 
   return (
-    <div className="flex h-full min-h-screen">
+    <div className="flex h-full min-h-screen grimoire-shell">
       <Sidebar activeMode={current_mode} onModeChange={handleModeChange} />
 
-      <main className="flex-1 flex flex-col min-w-0 bg-slate-900/40">
-        <header className="border-b border-slate-800 px-8 py-5 flex items-center justify-between gap-4">
+      <main className="flex-1 flex flex-col min-w-0">
+        <header className="border-b border-violet-900/30 px-8 py-5 flex items-center justify-between gap-4 bg-black/20 backdrop-blur-sm">
           <div>
-            <h1 className="text-xl font-bold text-slate-100">{modeLabels[current_mode]}</h1>
+            <h1 className="grimoire-display text-2xl font-semibold text-violet-100">
+              {modeLabels[current_mode]}
+            </h1>
             <p className="text-xs text-slate-500 mt-1 font-mono truncate">
               project: {manifest.project_id.slice(0, 8)}…
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleDemoGeneration}
-            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold transition-colors shrink-0"
-          >
-            + Тестовая генерация
-          </button>
+          {!isSelfPrompt && !isBrainstorm && (
+            <button
+              type="button"
+              onClick={handleDemoGeneration}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold transition-colors shrink-0"
+            >
+              + Тестовая генерация
+            </button>
+          )}
         </header>
 
         <section className="flex-1 p-6 md:p-8 overflow-auto">
-          {isSelfPrompt ? (
+          {isBrainstorm ? (
+            <BrainstormPanel onTransferToForge={handleTransferConceptToForge} />
+          ) : isSelfPrompt ? (
             <SelfPromptForm
               projectId={manifest.project_id}
               technicalSpec={manifest.technical_spec}

@@ -53,8 +53,10 @@ namespace AIWriterPublisher.Api.Controllers
         {
             try
             {
-                string jsonResult = await _artDirectorAgent.BrainstormConceptsAsync(request.Genre, request.Description);
-                return Content(jsonResult, "application/json");
+                List<ArtConcept> bookConepts = new List<ArtConcept>();
+
+                bookConepts = await _artDirectorAgent.BrainstormConceptsAsync(request.Genre, request.Description);
+                return Ok(bookConepts);
             }
             catch (Exception ex)
             {
@@ -70,7 +72,7 @@ namespace AIWriterPublisher.Api.Controllers
         {
             try
             {
-                string flatFluxPrompt;
+                string flatZITPrompt;
                 Console.WriteLine($"[Direct Engine] Запуск генерации. Режим: {request.Mode}");
                 
                 TechnicalSpecDto finalSpec = request.TechnicalSpec ?? new TechnicalSpecDto();
@@ -83,15 +85,15 @@ namespace AIWriterPublisher.Api.Controllers
                         return BadRequest("Промпт для распознавания не может быть пустым.");
 
                     finalSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, request.AnalysisModel);
-                    flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
+                    flatZITPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
                 }
                 else 
                 {
                     Console.WriteLine("[Direct Engine] Режим «Строгие слои» активирован. Используем предоставленную структуру ТZ.");
-                    flatFluxPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
+                    flatZITPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
                 }
 
-                Console.WriteLine($"[Direct Engine] Итоговый плоский промпт для Flux: {flatFluxPrompt}");
+                Console.WriteLine($"[Direct Engine] Итоговый плоский промпт для Flux: {flatZITPrompt}");
 
                 string base64Image = string.Empty;
                 string width = (request.RenderSettings?.Dimensions?.Width ?? 1024).ToString();
@@ -106,11 +108,11 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран Hugging Face (Flux.1-dev). Вызываем выделенный метод...");
                     if (_imageGenerator is RealImageGenerator realGenerator)
                     {
-                        base64Image = await realGenerator.GenerateFluxViaPollinationsAsync(flatFluxPrompt, width, height, finalSpec);
+                        base64Image = await realGenerator.GenerateFluxViaPollinationsAsync(flatZITPrompt, width, height, finalSpec);
                     }
                     else
                     {
-                        base64Image = await _imageGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
+                        base64Image = await _imageGenerator.GenerateImageAsync(flatZITPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
                     }
                 }
                 else
@@ -118,7 +120,7 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран стандартный движок генерации проекта (ComfyUI).");
                     if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
                     {
-                        base64Image = await comfyGenerator.GenerateImageAsync(flatFluxPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
+                        base64Image = await comfyGenerator.GenerateImageAsync(flatZITPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
                     }
                 }
 

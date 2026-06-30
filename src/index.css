@@ -8,7 +8,345 @@ body,
 
 body {
   margin: 0;
-  @apply bg-slate-950 text-slate-100 antialiased;
+  font-family: 'Manrope', system-ui, sans-serif;
+  background-color: #0d0b14;
+  color: #e8e4f5;
+  @apply antialiased;
+}
+
+/* ── Grimoire / Cyber-Wizard theme ── */
+@property --magic-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes magic-border-spin {
+  to {
+    --magic-angle: 360deg;
+  }
+}
+
+@keyframes shimmer-pass {
+  0% {
+    transform: translateX(-120%) skewX(-12deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(220%) skewX(-12deg);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes mana-orb-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mana-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes concept-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.grimoire-page {
+  position: relative;
+}
+
+.grimoire-display,
+.grimoire-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+
+.grimoire-kicker {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(167, 139, 250, 0.75);
+}
+
+.grimoire-select,
+.grimoire-textarea {
+  width: 100%;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  background: rgba(8, 6, 16, 0.85);
+  color: #ede9fe;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.grimoire-select {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+
+.grimoire-textarea {
+  padding: 1rem 1.1rem;
+  resize: vertical;
+  min-height: 11rem;
+  line-height: 1.65;
+}
+
+.grimoire-select:focus,
+.grimoire-textarea:focus {
+  outline: none;
+  border-color: rgba(167, 139, 250, 0.55);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.grimoire-textarea::placeholder {
+  color: rgba(148, 163, 184, 0.45);
+  font-style: italic;
+}
+
+/* Animated magical borders */
+.magic-border {
+  --magic-angle: 0deg;
+  position: relative;
+  padding: 1.5px;
+  border-radius: 1rem;
+  animation: magic-border-spin 5s linear infinite;
+}
+
+.magic-border--violet {
+  background: conic-gradient(
+    from var(--magic-angle),
+    #6366f1,
+    #a855f7,
+    #22d3ee,
+    #6366f1
+  );
+}
+
+.magic-border--emerald {
+  background: conic-gradient(
+    from var(--magic-angle),
+    #10b981,
+    #6366f1,
+    #34d399,
+    #10b981
+  );
+}
+
+.magic-border--amber {
+  background: conic-gradient(
+    from var(--magic-angle),
+    #f59e0b,
+    #a855f7,
+    #fbbf24,
+    #f59e0b
+  );
+}
+
+.magic-border__inner {
+  border-radius: calc(1rem - 1.5px);
+  background: linear-gradient(145deg, rgba(13, 11, 20, 0.98), rgba(18, 14, 28, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Shimmer button */
+.shimmer-btn {
+  position: relative;
+  overflow: hidden;
+  border: none;
+  border-radius: 0.85rem;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 45%, #6366f1 100%);
+  box-shadow:
+    0 8px 24px rgba(99, 102, 241, 0.35),
+    0 0 0 1px rgba(167, 139, 250, 0.25);
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s,
+    opacity 0.2s;
+}
+
+.shimmer-btn--lg {
+  padding: 1rem 1.25rem;
+  font-size: 1.05rem;
+}
+
+.shimmer-btn--md {
+  padding: 0.65rem 1rem;
+  font-size: 0.9rem;
+}
+
+.shimmer-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 32px rgba(99, 102, 241, 0.45),
+    0 0 24px rgba(168, 85, 247, 0.25);
+}
+
+.shimmer-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.shimmer-btn__glow {
+  position: absolute;
+  inset: -30%;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.35), transparent 60%);
+  animation: shimmer-glow-pulse 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.shimmer-btn__shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 65%
+  );
+  animation: shimmer-pass 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.shimmer-btn__label {
+  position: relative;
+  z-index: 1;
+}
+
+.shimmer-btn--loading {
+  background: linear-gradient(135deg, #312e81, #3730a3);
+}
+
+/* Loading orb */
+.mana-orb {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  border-top-color: #34d399;
+  border-right-color: #a78bfa;
+  animation: mana-orb-spin 1.1s linear infinite;
+  box-shadow: 0 0 24px rgba(52, 211, 153, 0.25);
+}
+
+.mana-pulse-text {
+  animation: mana-pulse 1.8s ease-in-out infinite;
+}
+
+.concept-card-enter {
+  animation: concept-rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Кнопка «Передать в кузницу» */
+.forge-transfer-btn {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: linear-gradient(135deg, rgba(30, 27, 46, 0.95), rgba(49, 46, 129, 0.4));
+  color: #e9d5ff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  transition:
+    border-color 0.25s,
+    box-shadow 0.25s,
+    transform 0.2s;
+}
+
+.forge-transfer-btn:hover:not(:disabled) {
+  border-color: rgba(167, 139, 250, 0.75);
+  box-shadow:
+    0 0 20px rgba(139, 92, 246, 0.35),
+    0 0 40px rgba(99, 102, 241, 0.15),
+    inset 0 0 20px rgba(139, 92, 246, 0.08);
+  transform: translateY(-1px);
+}
+
+.forge-transfer-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.forge-transfer-btn__glow {
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.2), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.forge-transfer-btn:hover:not(:disabled) .forge-transfer-btn__glow {
+  opacity: 1;
+  animation: shimmer-glow-pulse 1.8s ease-in-out infinite;
+}
+
+.forge-transfer-btn__shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(196, 181, 253, 0.45) 50%,
+    transparent 62%
+  );
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+.forge-transfer-btn:hover:not(:disabled) .forge-transfer-btn__shimmer {
+  animation: shimmer-pass 1.4s ease-in-out infinite;
+}
+
+.forge-transfer-btn__label {
+  position: relative;
+  z-index: 1;
+}
+
+.grimoire-shell {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 50%, rgba(168, 85, 247, 0.06), transparent),
+    #0d0b14;
 }
 
 @keyframes elf-glow-pulse {

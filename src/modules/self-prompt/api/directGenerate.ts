@@ -1,4 +1,4 @@
-import type { TechnicalSpec } from '../../../types/manifest';
+import type { AnalysisModel, RenderSettings, TechnicalSpec } from '../../../types/manifest';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:5057';
 
@@ -102,7 +102,9 @@ export async function sendImageToEdit(
     // Поля должны соответствовать C# DTO (с учетом JsonPropertyName)
     mode: payload.mode,
     analysis_model: payload.analysis_model || "nex-agi/nex-n2-pro:free",
-    denoising_strength: payload.render_settings?.denoising_strength || 0.45,
+    denoising_strength:
+      (payload.render_settings as RenderSettings & { denoising_strength?: number })
+        ?.denoising_strength ?? 0.45,
     
     // В бэкенде это свойство называется BaseImageBase64
     base_image_base64: referenceImageBase64 
@@ -128,7 +130,13 @@ export async function sendImageToEdit(
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   
   if (!response.ok) {
-    throw new Error(data.error || data.message || `Ошибка сервера (${response.status})`);
+    const errText =
+      typeof data.error === 'string'
+        ? data.error
+        : typeof data.message === 'string'
+          ? data.message
+          : `Ошибка сервера (${response.status})`;
+    throw new Error(errText);
   }
 
   // Бэкенд возвращает DirectGenerationResponse { ImageBase64, ParsedSpec }

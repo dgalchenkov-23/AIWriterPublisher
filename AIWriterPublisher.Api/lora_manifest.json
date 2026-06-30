@@ -1,7 +1,7 @@
 {
   "AvailableLoras": [
     {
-      "FileName": "z-image-aestheticbase-and-turbo.safetensors",
+      "FileName": "Z-Image-Aesthetic_v1.safetensors",
       "DisplayName": "Z-Image-Aesthetic",
       "RecommendedWeight": 1.0,
       "MinWeight": 0.8,
@@ -679,12 +679,12 @@
       "MinWeight": 5.0,
       "MaxWeight": 8.0,
       "TriggerWords": "",
-      "Category": "Atmosphere_Lighting",
-      "Description": "Добавляет классическую цветовую схему 'бирюзовый и оранжевый' для кинематографичного вида.",
-      "DetectionKeywords": ["teal", "orange", "color", "cinematic", "grade"],
-      "UsageRules": "Вес 5.0-8.0. Лучше работает со сценами, имеющими тепловой/холодный контраст.",
+      "Category": "Manual_Effects", 
+      "Description": "Классический голливудский цветокор (бирюзовый/оранжевый) в стиле блокбастеров Зака Снайдера. Использовать только вручную.",
+      "DetectionKeywords": [], 
+      "UsageRules": "Исключено из автоматического пайплайна Лораведа. Доступно только для ручного выбора пользователем в интерфейсе для экшен-сцен или специфического кино-арта.",
       "ConflictSet": [],
-      "ApplicableGenres": ["All", "Cinematic"],
+      "ApplicableGenres": ["Action", "Sci-Fi", "Cinematic"],
       "Overrides": {}
     },
     {

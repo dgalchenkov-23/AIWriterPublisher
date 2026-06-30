@@ -201,7 +201,7 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
                     new { role = "user", content = userContent }
                 },
                 temperature = 0.1, 
-                max_tokens = 2000 // Для плоского промпта 2000 токенов — с огромным запасом
+                max_tokens = 5000 // Для плоского промпта 2000 токенов — с огромным запасом
             };
 
             string jsonPayload = JsonSerializer.Serialize(requestBody);
@@ -209,12 +209,44 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
 
             try
             {
-                var httpResponse = await _httpClient.SendAsync(requestMessage);
+                HttpResponseMessage httpResponse = await _httpClient.SendAsync(requestMessage);
+
+                // Если первый запрос не удался - делаем fallback
                 if (!httpResponse.IsSuccessStatusCode)
                 {
                     string errContent = await httpResponse.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[PromptEngineer Error] API вернул {httpResponse.StatusCode}: {errContent}");
-                    return string.Empty;
+                    Console.WriteLine($"[ArtArcPromptEngineerhitector Error] API вернул {httpResponse.StatusCode}: {errContent}");
+                    Console.WriteLine("[PromptEngineer] Пытаемся использовать fallback модель openrouter/free...");
+                    
+                    // СОЗДАЕМ НОВЫЙ запрос для fallback
+                    var fallbackRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
+                    _httpClient.DefaultRequestHeaders.Remove("Authorization");
+                    _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey.Trim()}");
+                    
+                    var fallbackBody = new
+                    {
+                        model = "openrouter/free",
+                        messages = new[]
+                        {
+                            new { role = "system", content = systemPrompt },
+                            new { role = "user", content = userContent }
+                        },
+                        temperature = 0.1,
+                        max_tokens = 5000,
+                    };
+                    
+                    string fallbackPayload = JsonSerializer.Serialize(fallbackBody);
+                    fallbackRequest.Content = new StringContent(fallbackPayload, Encoding.UTF8, "application/json");
+                    
+                    // ПЕРЕИСПОЛЬЗУЕМ ту же переменную httpResponse
+                    httpResponse = await _httpClient.SendAsync(fallbackRequest);
+                    
+                    if (!httpResponse.IsSuccessStatusCode)
+                    {
+                        string fallbackErr = await httpResponse.Content.ReadAsStringAsync();
+                        Console.WriteLine($"[PromptEngineer Fallback Error] API вернул {httpResponse.StatusCode}: {fallbackErr}");
+                        return userContent;
+                    }
                 }
 
                 var responseString = await httpResponse.Content.ReadAsStringAsync();
@@ -239,7 +271,7 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             catch (Exception ex)
             {
                 Console.WriteLine($"[PromptEngineer Крах] Исключение: {ex.Message}");
-                return string.Empty;
+                return userContent ?? string.Empty;
             }
         }
         private async Task<string> CallOllamaForPromptAsync(string systemPrompt, string userContent)

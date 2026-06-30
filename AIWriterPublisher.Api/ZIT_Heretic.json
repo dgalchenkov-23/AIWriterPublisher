@@ -163,7 +163,7 @@
   },
   "11": {
     "inputs": {
-      "ckpt_name": "zImageTurboFP8Kijai_fp8ScaledE4m3fn.safetensors"
+      "ckpt_name": "eventHorizon_zitV10.safetensors"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {

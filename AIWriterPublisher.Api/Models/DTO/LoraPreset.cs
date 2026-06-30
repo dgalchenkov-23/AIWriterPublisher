@@ -26,8 +26,17 @@ namespace AIWriterPublisher.Api.Models.DTO;
     // Конфигурация для работы с LoRA
     public class LoraConfig
     {
-        public string LoraName { get; set; } = string.Empty; // Имя файла (например, из "FileName" в манифесте)
-        public double StrengthModel { get; set; } = 1.0;
-        public double StrengthClip { get; set; } = 1.0;
-        public Dictionary<string, object>? Overrides { get; set; }
+        public string DisplayName { get; set; }
+        public string FileName { get; set; }
+        public string TriggerWords { get; set; }
+        public double StrengthModel { get; set; }
+        public double StrengthClip { get; set; }
+    }
+
+    public class KSamplerSettings
+    {
+        public int Steps { get; set; }
+        public float Cfg { get; set; }
+        public string SamplerName { get; set; }
+        public string Scheduler { get; set; }
     }

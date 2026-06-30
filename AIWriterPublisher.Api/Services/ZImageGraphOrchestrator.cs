@@ -1,22 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-
-public class LoraConfig
-{
-    public string DisplayName { get; set; }
-    public string FileName { get; set; }
-    public float StrengthModel { get; set; }
-    public float StrengthClip { get; set; }
-}
-
-public class KSamplerSettings
-{
-    public int Steps { get; set; }
-    public float Cfg { get; set; }
-    public string SamplerName { get; set; }
-    public string Scheduler { get; set; }
-}
+using AIWriterPublisher.Api.Models.DTO; 
 
 public class ZImageGraphOrchestrator
 {
@@ -24,95 +9,98 @@ public class ZImageGraphOrchestrator
     private const string DISTILL_PATCH = "z-image_turbo_distillpatch_comfyui.safetensors";
     private const string CCD_REALISTIC = "ZIMAGE-CCD-V1.safetensors";
     private const string REALISTIC_SNAPSHOT = "RealisticSnapshot.safetensors"; // условное имя из манифеста
-    private const string AESTHETIC_BASE = "z-image-aestheticbase-and-turbo.safetensors";
+    private const string AESTHETIC_BASE = "Z-Image-Aesthetic_v1.safetensors";
     private const string BETTER_IMAGES = "better_images_loraholic.safetensors";
     private const string SKIN_DETAILS = "skindetails_mild_loraholic.safetensors";
 
-    public KSamplerSettings OptimizeGraph(List<LoraConfig> selectedLoras)
+    public OptimizedGraphResult OptimizeGraph(List<LoraConfig> selectedLoras)
     {
-        // Дефолтные безопасные настройки для Z-Image Turbo
-        var settings = new KSamplerSettings
-        {
-            Steps = 14,
-            Cfg = 1.0f,
-            SamplerName = "euler",
-            Scheduler = "beta"
+    // 1. Инициализируем дефолтный KSampler для Z-Image Turbo
+    var samplerSettings = new KSamplerSettings
+    {
+        Steps = 14,
+        Cfg = 1.0f,
+        SamplerName = "euler",
+        Scheduler = "beta"
+    };
+
+    // Если ИИ вернул пустой список, отдаем дефолты и пустой стек
+    if (selectedLoras == null || !selectedLoras.Any())
+    {
+        return new OptimizedGraphResult 
+        { 
+            SamplerSettings = samplerSettings, 
+            PatchedLoras = new List<LoraConfig>() 
         };
+    }
 
-        if (selectedLoras == null || !selectedLoras.Any())
-            return settings;
+    // 2. Определяем техническую доминанту
+    bool hasCcd = selectedLoras.Any(l => l.FileName.Equals(CCD_REALISTIC, StringComparison.OrdinalIgnoreCase));
+    bool hasSnapshot = selectedLoras.Any(l => l.FileName.Equals(REALISTIC_SNAPSHOT, StringComparison.OrdinalIgnoreCase));
+    bool hasDistill = selectedLoras.Any(l => l.FileName.Equals(DISTILL_PATCH, StringComparison.OrdinalIgnoreCase));
+    bool hasAesthetic = selectedLoras.Any(l => l.FileName.Equals(AESTHETIC_BASE, StringComparison.OrdinalIgnoreCase));
 
-        // -----------------------------------------------------------------
-        // ШАГ 1: ОПРЕДЕЛЕНИЕ ТЕХНИЧЕСКОЙ ДОМИНАНТЫ И НАСТРОЙКА СЕМПЛЕРА
-        // -----------------------------------------------------------------
-        
-        bool hasCcd = selectedLoras.Any(l => l.FileName.Equals(CCD_REALISTIC, StringComparison.OrdinalIgnoreCase));
-        bool hasSnapshot = selectedLoras.Any(l => l.FileName.Equals(REALISTIC_SNAPSHOT, StringComparison.OrdinalIgnoreCase));
-        bool hasDistill = selectedLoras.Any(l => l.FileName.Equals(DISTILL_PATCH, StringComparison.OrdinalIgnoreCase));
-        bool hasAesthetic = selectedLoras.Any(l => l.FileName.Equals(AESTHETIC_BASE, StringComparison.OrdinalIgnoreCase));
+    // Выставляем KSampler на основе доминанты
+    if (hasCcd || hasSnapshot)
+    {
+        samplerSettings.Steps = 12;
+        samplerSettings.Cfg = 1.0f;
+        samplerSettings.SamplerName = "euler";
+        samplerSettings.Scheduler = "beta";
+    }
+    else if (hasAesthetic && !hasDistill)
+    {
+        samplerSettings.Steps = 20;
+        samplerSettings.Cfg = 1.5f;
+        samplerSettings.SamplerName = "heunpp2";
+        samplerSettings.Scheduler = "linear_quadratic";
+    }
+    else if (hasDistill)
+    {
+        samplerSettings.Steps = 14;
+        samplerSettings.Cfg = 1.0f;
+        samplerSettings.SamplerName = "euler";
+        samplerSettings.Scheduler = "normal";
+    }
 
-        // Жесткое правило: Если есть CCD или Snapshot (Реализм) -> Только Euler! 
-        // Даже если ИИ закинул туда Эстетику, реализм приоритетнее по сэмплеру.
-        if (hasCcd || hasSnapshot)
+    // 3. Корректируем веса (Safe Scaling) ПРЯМО в переданной коллекции
+    var betterImagesLora = selectedLoras.FirstOrDefault(l => l.FileName.Equals(BETTER_IMAGES, StringComparison.OrdinalIgnoreCase));
+    var skinDetailsLora = selectedLoras.FirstOrDefault(l => l.FileName.Equals(SKIN_DETAILS, StringComparison.OrdinalIgnoreCase));
+
+    if (samplerSettings.SamplerName == "heunpp2")
+    {
+        // На 20 шагах Heun гасим агрессию слайдеров, чтобы не поплыла анатомия
+        if (betterImagesLora != null && betterImagesLora.StrengthModel > 1.5f)
         {
-            settings.Steps = 12; // Быстрый, точный проход для кожи
-            settings.Cfg = 1.0f;
-            settings.SamplerName = "euler";
-            settings.Scheduler = "beta";
+            betterImagesLora.StrengthModel = 1.2f;
+            betterImagesLora.StrengthClip = 1.2f;
         }
-        // Если реализма нет, но включена Эстетика без Дистиллятора -> включаем "Журнальный режим"
-        else if (hasAesthetic && !hasDistill)
+        if (skinDetailsLora != null && skinDetailsLora.StrengthModel > 1.5f)
         {
-            settings.Steps = 20; // Heun требует больше шагов для схождения
-            settings.Cfg = 1.5f;
-            settings.SamplerName = "heunpp2";
-            settings.Scheduler = "linear_quadratic";
+            skinDetailsLora.StrengthModel = 1.0f;
+            skinDetailsLora.StrengthClip = 1.0f;
         }
-        // Если вшит Дистиллятор патч -> Heun запрещен математически, откатываемся на Turbo-настройки
-        else if (hasDistill)
+    }
+    else if (betterImagesLora != null && skinDetailsLora != null)
+    {
+        // На быстрых сэмплерах защищаем от кумулятивного взрыва шума при совместном использовании
+        if (betterImagesLora.StrengthModel > 2.0f) 
         {
-            settings.Steps = 14;
-            settings.Cfg = 1.0f;
-            settings.SamplerName = "euler";
-            settings.Scheduler = "normal";
+            betterImagesLora.StrengthModel = 2.0f;
+            betterImagesLora.StrengthClip = 2.0f;
         }
-
-        // -----------------------------------------------------------------
-        // ШАГ 2: КОРРЕКЦИЯ ВЕСОВ (SAFE SCALING) ПОД ВЫБРАННЫЙ РЕЖИМ
-        // -----------------------------------------------------------------
-        
-        // Находим агрессивные слайдеры в стеке, если они есть
-        var betterImagesLora = selectedLoras.FirstOrDefault(l => l.FileName.Equals(BETTER_IMAGES, StringComparison.OrdinalIgnoreCase));
-        var skinDetailsLora = selectedLoras.FirstOrDefault(l => l.FileName.Equals(SKIN_DETAILS, StringComparison.OrdinalIgnoreCase));
-
-        // Ситуация А: Тяжелый сэмплер (Heunpp2 / 20 шагов)
-        if (settings.SamplerName == "heunpp2")
+        if (skinDetailsLora.StrengthModel > 2.0f) 
         {
-            // На 20 шагах слайдеры становятся токсичными. Принудительно душим их веса в 2 раза.
-            if (betterImagesLora != null && betterImagesLora.StrengthModel > 1.5f)
-            {
-                betterImagesLora.StrengthModel = 1.2f;
-                betterImagesLora.StrengthClip = 1.2f;
-            }
-            if (skinDetailsLora != null && skinDetailsLora.StrengthModel > 1.5f)
-            {
-                skinDetailsLora.StrengthModel = 1.0f;
-                skinDetailsLora.StrengthClip = 1.0f;
-            }
+            skinDetailsLora.StrengthModel = 1.5f;
+            skinDetailsLora.StrengthClip = 1.5f;
         }
-        // Ситуация Б: Легкий сэмплер, но ИИ влепил ОБА слайдера одновременно
-        else if (betterImagesLora != null && skinDetailsLora != null)
-        {
-            // Защита от кумулятивного взрыва анатомии. Срезаем до безопасного лимита.
-            if (betterImagesLora.StrengthModel > 2.0f) 
-                betterImagesLora.StrengthModel = 2.0f;
-                betterImagesLora.StrengthClip = 2.0f;
+    }
 
-            if (skinDetailsLora.StrengthModel > 2.0f) 
-                skinDetailsLora.StrengthModel = 1.5f;
-                skinDetailsLora.StrengthClip = 1.5f;
-        }
-
-        return settings;
+    // Возвращаем полный пропатченный пакет
+    return new OptimizedGraphResult
+    {
+        SamplerSettings = samplerSettings,
+        PatchedLoras = selectedLoras // Веса внутри элементов уже изменены ссылочно
+    };
     }
 }

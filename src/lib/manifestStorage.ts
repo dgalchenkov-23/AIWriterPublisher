@@ -51,7 +51,7 @@ export function createDefaultManifest(): ProjectManifest {
       analysis_model: 'gpt-oss-120b',
       reference_image_url: null,
       tz_tab: 'magic-flow',
-      formData: { raw_prompt: '' },
+      formData: { raw_prompt: '', uncensored_raw_prompt: '' },
     },
     typography_layers: {
       title: { ...defaultTextLayer, size: 64, y: 120 },
@@ -142,12 +142,16 @@ function sanitizeSelfPrompt(raw: unknown, defaults: SelfPromptState): SelfPrompt
     ensureString(formRecord.raw_prompt, defaults.formData.raw_prompt) ||
     ensureString(nested.raw_prompt ?? record.raw_prompt, defaults.formData.raw_prompt);
 
+  const uncensoredRaw =
+    ensureString(formRecord.uncensored_raw_prompt, defaults.formData.uncensored_raw_prompt) ||
+    ensureString(nested.uncensored_raw_prompt, defaults.formData.uncensored_raw_prompt);
+
   return {
     analysis_model: isAnalysisModel(analysisRaw) ? analysisRaw : defaults.analysis_model,
     reference_image_url:
       typeof referenceRaw === 'string' && referenceRaw.length > 0 ? referenceRaw : null,
     tz_tab: isTzTab(tzTabRaw) ? tzTabRaw : defaults.tz_tab,
-    formData: { raw_prompt: rawPrompt },
+    formData: { raw_prompt: rawPrompt, uncensored_raw_prompt: uncensoredRaw },
   };
 }
 

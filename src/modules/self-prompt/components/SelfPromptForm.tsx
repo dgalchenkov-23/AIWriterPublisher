@@ -22,8 +22,6 @@ const tzTabs: { id: SelfPromptTzTab; label: string }[] = [
 
 const MAGIC_PLACEHOLDER =
   'Опиши свою обложку во всех деталях... Наш ИИ-директор послушно разложит твой творческий поток по строгим техническим слоям без капли лишней фантазии.';
-const MAGIC_UNCENS_PLACEHOLDER =
-  'Опиши здесь подробности, которые могут не пройти цензуру, этот промпт добавится в основную сцену.';
 
 export interface SelfPromptFormProps {
   projectId: string;
@@ -303,12 +301,11 @@ export default function SelfPromptForm({
         .filter(value => value && value.trim() !== '')
         .join(' | ');
 
-      const cover = {
+      const cover: GeneratedCover = {
         art_id: crypto.randomUUID(),
-        url: res.imageBase64 || res.imageUrl, // Бэкенд возвращает ImageBase64
+        url: res.imageUrl,
         timestamp: new Date().toISOString(),
-        // Сохраняем то, что ушло в Flux: либо сырой текст писателя, либо полный технический спек
-        technical_prompt_used: res.technicalPrompt || (isMagicFlow ? selfPrompt.formData.raw_prompt : strictLayersPrompt),
+        technical_prompt_used: isMagicFlow ? selfPrompt.formData.raw_prompt : strictLayersPrompt,
       };
   
       // Добавляем обложку в ленту (Катя сразу видит результат рендера Flux)
@@ -471,31 +468,10 @@ export default function SelfPromptForm({
                     'hover:border-cyan-400/40 ' +
                     'focus:border-violet-400/50 focus:ring-2 focus:ring-emerald-400/25 ' +
                     'focus:shadow-[0_0_15px_rgba(34,197,94,0.35),0_0_24px_rgba(139,92,246,0.28)]'
+                  
                   }
                 />
-              
-                <div
-                  className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-br from-emerald-500/30 via-cyan-500/20 to-violet-600/30 opacity-60 group-focus-within:opacity-100 group-focus-within:animate-pulse blur-[1px]"
-                  aria-hidden
-                />
-                <textarea
-                  value={selfPrompt.formData.uncensored_raw_prompt}
-                  onChange={(e) => setRawPrompt(e.target.value)}
-                  placeholder={MAGIC_UNCENS_PLACEHOLDER}
-                  rows={14}
-                  spellCheck={false}
-                  className={
-                    'elf-magic-field relative w-full min-h-[18rem] rounded-2xl border border-emerald-500/35 ' +
-                    'bg-[#030712] px-5 py-4 text-sm leading-relaxed text-emerald-50/95 ' +
-                    'placeholder:text-emerald-600/50 placeholder:italic placeholder:leading-relaxed ' +
-                    'shadow-[inset_0_2px_24px_rgba(0,0,0,0.55)] resize-y ' +
-                    'transition-all duration-300 outline-none ' +
-                    'hover:border-cyan-400/40 ' +
-                    'focus:border-violet-400/50 focus:ring-2 focus:ring-emerald-400/25 ' +
-                    'focus:shadow-[0_0_15px_rgba(34,197,94,0.35),0_0_24px_rgba(139,92,246,0.28)]'
-                  }
-                />
-                </div>
+                </div>    
             ) : (
               <div className="flex flex-col gap-5" role="tabpanel">
                 {technicalFields.map((field) => (

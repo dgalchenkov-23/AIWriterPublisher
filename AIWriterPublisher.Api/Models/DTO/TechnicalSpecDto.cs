@@ -109,3 +109,9 @@ public sealed class GenerationPipelineRequest
     [JsonPropertyName("comfyui_img2img_spec")]
     public ComfyUiImg2ImgSpecDto ComfyUiImg2ImgSpec { get; set; } = new();
 }
+
+public class OptimizedGraphResult
+{
+    public KSamplerSettings SamplerSettings { get; set; }
+    public List<LoraConfig> PatchedLoras { get; set; }
+}

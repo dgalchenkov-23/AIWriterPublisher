@@ -68,6 +68,7 @@ builder.Services.AddTransient<ArtArchitectorAgent>();
 builder.Services.AddTransient<VisionEditorAgent>();
 // Регистрируем сервис оркестрации Лор, который будет работать с ИИ-агентом
 builder.Services.AddScoped<LoraOrchestrationService>();
+builder.Services.AddSingleton<ZImageGraphOrchestrator>();
 builder.Services.AddScoped<ILoraOrchestrationService, LoraOrchestrationService>();
 // Регистрируем генераторы картинок
 builder.Services.AddTransient<RealImageGenerator>();

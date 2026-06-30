@@ -339,13 +339,43 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
 
                 // Console.WriteLine($"[ArtArchitector] Отправка Магического потока на разбор в модель {modelName}...");
                 // Console.WriteLine($"[ArtArchitector Send] Auth Header: {requestMessage.Headers.Authorization}");
-                var httpResponse = await _httpClient.SendAsync(requestMessage);
+                HttpResponseMessage httpResponse = await _httpClient.SendAsync(requestMessage);
 
+                // Если первый запрос не удался - делаем fallback
                 if (!httpResponse.IsSuccessStatusCode)
                 {
                     string errContent = await httpResponse.Content.ReadAsStringAsync();
                     Console.WriteLine($"[ArtArchitector Error] API вернул {httpResponse.StatusCode}: {errContent}");
-                    return new TechnicalSpecDto { Subject = rawPrompt };
+                    Console.WriteLine("[ArtArchitector] Пытаемся использовать fallback модель openrouter/free...");
+                    
+                    // СОЗДАЕМ НОВЫЙ запрос для fallback
+                    var fallbackRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
+                    fallbackRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanApiKey);
+                    
+                    var fallbackBody = new
+                    {
+                        model = "openrouter/free",
+                        messages = new[]
+                        {
+                            new { role = "system", content = systemPrompt },
+                            new { role = "user", content = rawPrompt }
+                        },
+                        temperature = 0.1,
+                        max_tokens = 10000,
+                    };
+                    
+                    string fallbackPayload = JsonSerializer.Serialize(fallbackBody);
+                    fallbackRequest.Content = new StringContent(fallbackPayload, Encoding.UTF8, "application/json");
+                    
+                    // ПЕРЕИСПОЛЬЗУЕМ ту же переменную httpResponse
+                    httpResponse = await _httpClient.SendAsync(fallbackRequest);
+                    
+                    if (!httpResponse.IsSuccessStatusCode)
+                    {
+                        string fallbackErr = await httpResponse.Content.ReadAsStringAsync();
+                        Console.WriteLine($"[ArtArchitector Fallback Error] API вернул {httpResponse.StatusCode}: {fallbackErr}");
+                        return new TechnicalSpecDto { Subject = rawPrompt };
+                    }
                 }
 
                 string responseString = await httpResponse.Content.ReadAsStringAsync();
@@ -389,6 +419,31 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                 Console.WriteLine($"[ArtArchitector Крах] Исключение: {ex.Message}. Использование фоллбэка.");
                 return new TechnicalSpecDto { Subject = rawPrompt };
             }
+        }
+
+        private async Task<TechnicalSpecDto> CallFreeOpenRouterAsync(string systemPrompt, string userPrompt)
+        {
+            string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
+            string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
+            string modelName = _configuration["AIServices:OpenRouter:SecondaryModel"] ?? "openrouter/free";
+
+            string cleanApiKey = apiKey?.Trim() ?? "";
+
+            var requestBody = new
+            {
+                model = modelName,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt }
+                },
+                temperature = 0.1, // Минимальная креативность для точного соблюдения структуры
+                max_tokens = 10000, // Максимальное количество слов в ответе
+            };
+
+            // Безопасно настраиваем авторизацию в HttpClient
+            _httpClient.DefaultRequestHeaders.Remove("Authorization");
+            return new TechnicalSpecDto();
         }
     
         private async Task<TechnicalSpecDto> CallOllamaAsync(string systemPrompt, string userPrompt)
