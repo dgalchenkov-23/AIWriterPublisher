@@ -23,7 +23,7 @@ namespace AIWriterPublisher.Api.Services
         /// <summary>
         /// Реализация интерфейсного метода. Маппит пропорции и шлет запрос во Flux.
         /// </summary>
-        public async Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec, string analysisModel, string aspectRatio = "2:3")
+        public async Task<string> GenerateImageAsync(EngineeringSpecDto engineeringSpec, TechnicalSpecDto artArchitectorSpec, string analysisModel, string aspectRatio = "2:3")
         {
             // Маппим привычные Кате пропорции обложки в пиксели, которые понимает Flux.1-dev
             // Базируемся на золотом стандарте ~1 мегапиксель для Flux
@@ -48,7 +48,7 @@ namespace AIWriterPublisher.Api.Services
 
             // Вызываем наш прямой enterprise-пайплайн к Hugging Face
             // return await GenerateFluxViaHuggingFaceAsync(technicalPrompt, width, height);
-            return await GenerateFluxViaPollinationsAsync(technicalPrompt, width, height, artArchitectorSpec);
+            return await GenerateFluxViaPollinationsAsync(engineeringSpec.PositivePrompt, width, height, artArchitectorSpec);
         }
 
         /// <summary>

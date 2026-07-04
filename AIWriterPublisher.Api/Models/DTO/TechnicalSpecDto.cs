@@ -28,6 +28,17 @@ public sealed class TechnicalSpecDto
     [JsonPropertyName("negative_constraints")]
     public string NegativeConstraints { get; set; } = string.Empty;
 }
+/// <summary>
+/// Параметры рендеринга для генерации (Инженерный пульт / Декомпозиция)
+/// </summary>
+public sealed class EngineeringSpecDto
+{
+    [JsonPropertyName("positive_prompt")]
+    public string PositivePrompt { get; set; } = string.Empty;
+
+    [JsonPropertyName("negative_prompt")]
+    public string NegativePrompt { get; set; } = string.Empty;
+}
 
 /// <summary>
 /// Параметры типографики для Canvas Studio (Слой текста)

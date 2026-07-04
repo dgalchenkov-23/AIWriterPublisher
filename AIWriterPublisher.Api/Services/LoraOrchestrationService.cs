@@ -78,21 +78,14 @@ public class LoraOrchestrationService : ILoraOrchestrationService
     public Dictionary<string, LoraPreset> GetAvailablePresets() 
     {
         return _allLoras.ToDictionary(
-        lora => lora.FileName,
-        lora => new LoraPreset
-        {
-            DisplayName = lora.DisplayName,
-            FileName = lora.FileName,
-            DefaultWeight = lora.DefaultWeight
-        }
-    );
-        // return LoraPreset().ToDictionary(p => p.FileName, p => new LoraDefinition
-        // {
-        //     FileName = p.FileName,
-        //     DisplayName = p.DisplayName,
-        //     DefaultWeight = p.DefaultWeight,
-        //     TriggerWords = "" // Тут можно было бы подтянуть из манифеста, если нужно
-        // });
+            lora => lora.FileName,
+            lora => new LoraPreset
+            {
+                DisplayName = lora.DisplayName,
+                FileName = lora.FileName,
+                DefaultWeight = lora.DefaultWeight
+            }
+        );
     }
 
     public LoraPreset ResolveLora(string genre, string prompt, string mode)

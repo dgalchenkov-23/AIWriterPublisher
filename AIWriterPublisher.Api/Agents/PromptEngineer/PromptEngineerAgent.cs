@@ -1,4 +1,5 @@
 using System;
+using Polly;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +21,7 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             _configuration = configuration;
         }
 
-        public async Task<string> GenerateTechnicalPromptAsync(TechnicalSpecDto spec, string analysisModel)
+        public async Task<EngineeringSpecDto> GenerateTechnicalPromptAsync(TechnicalSpecDto spec, string analysisModel)
         {
             // Системный промпт для Flux.1-dev / Z-Image через gpt-oss-120b
             string systemPrompt = @"
@@ -160,10 +161,15 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
 
                 ---
 
-                ФОРМАТ ОТВЕТА
+                СТРУКТУРА ОТВЕТА (ОТВЕЧАЙ СТРОГО В ЭТОМ ФОРМАТЕ, ВСЕ ПОЛЯ НА РУССКОМ):
+                {
+                    ""positive_prompt"": ""плоский промпт на АНГЛИЙСКОМ языке, собранный по правилам выше"",
+                    ""negative_prompt"": ""список запрещённых элементов через запятую на АНГЛИЙСКОМ ЯЗЫКЕ (например: текст, водяной знак, размытость, деформация)""
+                }
 
-                Ты должен вернуть ТОЛЬКО итоговую плоскую строку на АНГЛИЙСКОМ языке.
-                Никаких вводных фраз, никаких кавычек, никаких объяснений и никаких markdown-разметок (без каких-либо ```). Только чистый, готовый к отправке в модель текст промпта.
+                Ты должен вернуть ТОЛЬКО итоговый JSON на АНГЛИЙСКОМ языке!
+                Do not output your reasoning or internal chain of thought. Output ONLY the final JSON in English!!!
+                Никаких вводных фраз, никаких кавычек, никаких объяснений и никаких markdown-разметок (без каких-либо ```). Только чистый, JSON готовый к отправке в модель генерации.
                 ";
             var userContent = $@"
                 Обработай следующие слои и собери финальный промпт:
@@ -178,7 +184,7 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             // Если модель — локальная Ollama, используем её специфический эндпоинт и формат промпта
             if (analysisModel == "ollama-qwen-2-7b")
             {
-                return await CallOllamaForPromptAsync(systemPrompt, userContent);
+                return new EngineeringSpecDto { PositivePrompt = await CallOllamaForPromptAsync(systemPrompt, userContent) };
             }
 
             // Читаем из актуальной безопасной иерархии конфигурации
@@ -186,11 +192,21 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             string apiKey = _configuration["AiServices:OpenRouter:ApiKey"] ?? throw new InvalidOperationException("OpenRouter ApiKey не настроен!");
             string modelName = _configuration["AiServices:OpenRouter:PrimaryModel"] ?? "openai/gpt-oss-120b:free";
 
-            _httpClient.DefaultRequestHeaders.Remove("Authorization");
-            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey.Trim()}");
+            string cleanApiKey = apiKey?.Trim() ?? "";
+            // _httpClient.DefaultRequestHeaders.Remove("Authorization");
+            // _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey.Trim()}");
 
-            var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
-            requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            // var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
+            // requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+            var retryPolicy = Policy
+                .Handle<HttpRequestException>()
+                .OrResult<HttpResponseMessage>(r => r.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                .WaitAndRetryAsync(15, retryAttempt => TimeSpan.FromSeconds(3),
+                    (exception, timeSpan, retryCount, context) =>
+                    {
+                        Console.WriteLine($"[PromptEngineer Warning] OpenRouter словил 429. Попытка {retryCount}, ждем {timeSpan.TotalSeconds} сек...");
+                    });
 
             var requestBody = new
             {
@@ -205,17 +221,24 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             };
 
             string jsonPayload = JsonSerializer.Serialize(requestBody);
-            requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+            // requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
             try
             {
-                HttpResponseMessage httpResponse = await _httpClient.SendAsync(requestMessage);
+                // Используем Polly для повторных попыток при 429 или сетевых ошибках
+                HttpResponseMessage httpResponse = await retryPolicy.ExecuteAsync(async () => 
+                {
+                    var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
+                    requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanApiKey);
+                    requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
+                    return await _httpClient.SendAsync(requestMessage);
+                });
                 // Если первый запрос не удался - делаем fallback
                 if (!httpResponse.IsSuccessStatusCode)
                 {
                     string errContent = await httpResponse.Content.ReadAsStringAsync();
-                    Console.WriteLine($"[ArtArcPromptEngineerhitector Error] API вернул {httpResponse.StatusCode}: {errContent}");
+                    Console.WriteLine($"[PromptEngineer Error] API вернул {httpResponse.StatusCode}: {errContent}");
                     Console.WriteLine("[PromptEngineer] Пытаемся использовать fallback модель openrouter/free...");
                     
                     // СОЗДАЕМ НОВЫЙ запрос для fallback
@@ -245,7 +268,11 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
                     {
                         string fallbackErr = await httpResponse.Content.ReadAsStringAsync();
                         Console.WriteLine($"[PromptEngineer Fallback Error] API вернул {httpResponse.StatusCode}: {fallbackErr}");
-                        return userContent;
+                        return new EngineeringSpecDto
+                        {
+                            PositivePrompt = string.Empty,
+                            NegativePrompt = string.Empty
+                        };
                     }
                 }
 
@@ -260,18 +287,40 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
                     {
                         // Очищаем от возможных артефактов разметки, если модель ослушалась
                         rawText = rawText.Replace("```json", "").Replace("```", "").Replace("json", "").Trim();
-                        Console.WriteLine($"[PromptEngineer Success] Сгенерирован промпт: {rawText}");
-                        return rawText;
+                        
+                       
+                        // Безопасно парсим полученный JSON в список (List) концептов
+                        using var parsedDoc = JsonDocument.Parse(rawText);
+                        var parsedRoot = parsedDoc.RootElement;
+                        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        
+                        // Десериализуем именно как Список!
+                        var engineeredSpec = JsonSerializer.Deserialize<EngineeringSpecDto>(parsedRoot.GetRawText(), options);
+                        Console.WriteLine($"[PromptEngineer Success] Сгенерирован промпт: {engineeredSpec}");
+                        
+                        return engineeredSpec ?? new EngineeringSpecDto
+                        {
+                            PositivePrompt = string.Empty,
+                            NegativePrompt = string.Empty
+                        };
                     }
                 }
 
                 Console.WriteLine($"[PromptEngineer Error] Не удалось извлечь контент из choices.");
-                return string.Empty;
+                return new EngineeringSpecDto
+                {
+                    PositivePrompt = string.Empty,
+                    NegativePrompt = string.Empty
+                };
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[PromptEngineer Крах] Исключение: {ex.Message}");
-                return userContent ?? string.Empty;
+                return new EngineeringSpecDto
+                {
+                    PositivePrompt = userContent, // Возвращаем исходный пользовательский контент в случае ошибки
+                    NegativePrompt = string.Empty
+                };
             }
         }
         private async Task<string> CallOllamaForPromptAsync(string systemPrompt, string userContent)

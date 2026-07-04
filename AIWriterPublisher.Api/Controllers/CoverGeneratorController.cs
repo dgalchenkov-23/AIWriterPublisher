@@ -72,7 +72,7 @@ namespace AIWriterPublisher.Api.Controllers
         {
             try
             {
-                string flatZITPrompt;
+                EngineeringSpecDto engineeringSpec = new EngineeringSpecDto();
                 Console.WriteLine($"[Direct Engine] Запуск генерации. Режим: {request.Mode}");
                 
                 TechnicalSpecDto finalSpec = request.TechnicalSpec ?? new TechnicalSpecDto();
@@ -85,15 +85,15 @@ namespace AIWriterPublisher.Api.Controllers
                         return BadRequest("Промпт для распознавания не может быть пустым.");
 
                     finalSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, request.AnalysisModel);
-                    flatZITPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
+                    engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
                 }
                 else 
                 {
                     Console.WriteLine("[Direct Engine] Режим «Строгие слои» активирован. Используем предоставленную структуру ТZ.");
-                    flatZITPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
+                    engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
                 }
 
-                Console.WriteLine($"[Direct Engine] Итоговый плоский промпт для Flux: {flatZITPrompt}");
+                Console.WriteLine($"[Direct Engine] Итоговый плоский промпт для модели: {engineeringSpec.PositivePrompt}");
 
                 string base64Image = string.Empty;
                 string width = (request.RenderSettings?.Dimensions?.Width ?? 1024).ToString();
@@ -108,11 +108,11 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран Hugging Face (Flux.1-dev). Вызываем выделенный метод...");
                     if (_imageGenerator is RealImageGenerator realGenerator)
                     {
-                        base64Image = await realGenerator.GenerateFluxViaPollinationsAsync(flatZITPrompt, width, height, finalSpec);
+                        base64Image = await realGenerator.GenerateFluxViaPollinationsAsync(engineeringSpec.PositivePrompt, width, height, finalSpec);
                     }
                     else
                     {
-                        base64Image = await _imageGenerator.GenerateImageAsync(flatZITPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
+                        base64Image = await _imageGenerator.GenerateImageAsync(engineeringSpec, finalSpec, request.AnalysisModel, targetAspectRatio);
                     }
                 }
                 else
@@ -120,7 +120,7 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран стандартный движок генерации проекта (ComfyUI).");
                     if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
                     {
-                        base64Image = await comfyGenerator.GenerateImageAsync(flatZITPrompt, finalSpec, request.AnalysisModel, targetAspectRatio);
+                        base64Image = await comfyGenerator.GenerateImageAsync(engineeringSpec, finalSpec, request.AnalysisModel, targetAspectRatio);
                     }
                 }
 
@@ -182,11 +182,11 @@ namespace AIWriterPublisher.Api.Controllers
                     // РЕЖИМ СТРОГИХ СЛОЕВ: Используем PromptEngineer для сборки текста
                     _logger.LogInformation("[Z-Image] Сборка промпта из технических слоев...");
                     TechnicalSpecDto spec = request.TechnicalSpec ?? new TechnicalSpecDto();
-                    string techPrompt = await _promptEngineerAgent.GenerateTechnicalPromptAsync(spec, request.AnalysisModel);
-                    
+                    EngineeringSpecDto engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(spec, request.AnalysisModel);
+
                     editSpec = new ComfyUiImg2ImgSpecDto 
                     { 
-                        PromptOverride = techPrompt,
+                        PromptOverride = engineeringSpec.PositivePrompt,
                         DenoisingStrength = request.DenoisingStrength ?? 0.45,
                         ReferenceImagePath = localPath
                     };

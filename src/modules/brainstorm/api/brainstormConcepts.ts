@@ -28,10 +28,12 @@ function normalizeConcept(raw: unknown, index: number): ArtConcept | null {
         ? item.aspect_ratio
         : '2:3';
 
+  const review = typeof item.review === 'string' ? item.review : '';
+
   if (!title && !description) return null;
 
   const id = typeof item.id === 'number' ? item.id : index + 1;
-  return { id, title, description, visualElements, rawPrompt, aspectRatio };
+  return { id, title, description, visualElements, rawPrompt, aspectRatio, review };
 }
 
 export async function brainstormConcepts(

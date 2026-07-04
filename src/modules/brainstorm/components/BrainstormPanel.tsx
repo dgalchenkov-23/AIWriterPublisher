@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import MagicBorder from '../../../components/magic/MagicBorder';
 import ShimmerButton from '../../../components/magic/ShimmerButton';
+import {
+  loadBrainstormCache,
+  saveBrainstormCache,
+} from '../../../lib/brainstormCache';
 import type { ArtConcept } from '../../../types/artConcept';
 import { brainstormConcepts } from '../api/brainstormConcepts';
 import ConceptCard from './ConceptCard';
+import MiraSidebar from './MiraSidebar';
 
 const GENRES = [
   'Фэнтези',
@@ -19,23 +24,67 @@ const GENRES = [
 const SYNOPSIS_PLACEHOLDER =
   'Опишите мир, героя и настроение книги… Например: «В туманном портовом городе юная алхимик ищет пропавшего брата, а по ночам по улицам шепчутся тени прошлого…»';
 
+function readInitialState() {
+  const cached = loadBrainstormCache();
+  const concepts = cached?.concepts ?? [];
+  const activeIndex =
+    cached?.activeConceptIndex != null && concepts[cached.activeConceptIndex]
+      ? cached.activeConceptIndex
+      : concepts.length > 0
+        ? 0
+        : null;
+
+  return {
+    genre: cached?.genre && GENRES.includes(cached.genre as (typeof GENRES)[number])
+      ? cached.genre
+      : GENRES[0],
+    description: cached?.description ?? '',
+    concepts,
+    activeConceptIndex: activeIndex,
+    selectedConceptIndex: cached?.activeConceptIndex ?? null,
+  };
+}
+
 export default function BrainstormPanel({
   onTransferToForge,
 }: {
   onTransferToForge: (concept: ArtConcept) => void;
 }) {
-  const [genre, setGenre] = useState<string>(GENRES[0]);
-  const [description, setDescription] = useState('');
+  const initial = readInitialState();
+
+  const [genre, setGenre] = useState<string>(initial.genre);
+  const [description, setDescription] = useState(initial.description);
   const [loading, setLoading] = useState(false);
-  const [concepts, setConcepts] = useState<ArtConcept[]>([]);
+  const [concepts, setConcepts] = useState<ArtConcept[]>(initial.concepts);
+  const [activeConceptIndex, setActiveConceptIndex] = useState<number | null>(
+    initial.activeConceptIndex,
+  );
+  const [selectedConceptIndex, setSelectedConceptIndex] = useState<number | null>(
+    initial.selectedConceptIndex,
+  );
   const [error, setError] = useState<string | null>(null);
+
+  const activeConcept = useMemo(() => {
+    if (activeConceptIndex == null || !concepts[activeConceptIndex]) return null;
+    return concepts[activeConceptIndex];
+  }, [concepts, activeConceptIndex]);
+
+  useEffect(() => {
+    saveBrainstormCache({
+      genre,
+      description,
+      concepts,
+      activeConceptIndex: selectedConceptIndex,
+      cachedAt: new Date().toISOString(),
+    });
+  }, [genre, description, concepts, selectedConceptIndex]);
 
   const handleBrainstorm = async () => {
     if (!description.trim()) return;
 
     setLoading(true);
     setError(null);
-    setConcepts([]);
+    setSelectedConceptIndex(null);
 
     try {
       const result = await brainstormConcepts({ genre, description: description.trim() });
@@ -44,6 +93,8 @@ export default function BrainstormPanel({
         return;
       }
       setConcepts(result);
+      setActiveConceptIndex(0);
+      setSelectedConceptIndex(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Не удалось вызвать ритуал брейншторма';
       setError(msg);
@@ -51,6 +102,13 @@ export default function BrainstormPanel({
       setLoading(false);
     }
   };
+
+  const handleSelectConcept = (_concept: ArtConcept, index: number) => {
+    setActiveConceptIndex(index);
+    setSelectedConceptIndex(index);
+  };
+
+  const showEmptyState = !loading && concepts.length === 0 && !error;
 
   return (
     <div className="grimoire-page w-full max-w-6xl mx-auto">
@@ -60,60 +118,74 @@ export default function BrainstormPanel({
           Гримуар идей обложки
         </h2>
         <p className="mt-3 text-sm md:text-base text-slate-400 max-w-2xl leading-relaxed">
-          Расскажите о книге — и студия соткёт три магических направления. Выберите то, что
-          откликается сердцу, и переходите к точной генерации.
+          Расскажите о книге — и студия соткёт три магических направления. Выберите концепт,
+          послушайте разбор Миры — и переходите к точной генерации.
         </p>
+        {concepts.length > 0 && (
+          <p className="mt-2 text-[11px] text-emerald-400/70 font-mono">
+            ✓ {concepts.length} концепт(а) в кэше — переживут F5 и смену вкладок
+          </p>
+        )}
       </header>
 
       <div className="flex flex-col gap-10">
-        {/* Input — The Ritual */}
-        <MagicBorder variant="violet" innerClassName="p-6 md:p-7 max-w-3xl">
-          <p className="grimoire-kicker mb-4">✦ Вводные данные</p>
+        <MagicBorder variant="violet" innerClassName="p-6 md:p-7">
+          <p className="grimoire-kicker mb-5">✦ Вводные данные</p>
 
-          <label className="flex flex-col gap-2 mb-5">
-            <span className="text-sm font-semibold text-violet-100">Жанр</span>
-            <select
-              value={genre}
-              onChange={(e) => setGenre(e.target.value)}
-              className="grimoire-select"
-            >
-              {GENRES.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(260px,340px)] gap-6 items-stretch">
+            <div className="flex flex-col min-w-0">
+              <label className="flex flex-col gap-2 mb-5">
+                <span className="text-sm font-semibold text-violet-100">Жанр</span>
+                <select
+                  value={genre}
+                  onChange={(e) => setGenre(e.target.value)}
+                  className="grimoire-select"
+                >
+                  {GENRES.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label className="flex flex-col gap-2 mb-6">
-            <span className="text-sm font-semibold text-violet-100">Синопсис / описание книги</span>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={SYNOPSIS_PLACEHOLDER}
-              rows={10}
-              spellCheck
-              className="grimoire-textarea"
+              <label className="flex flex-col gap-2 mb-6 flex-1">
+                <span className="text-sm font-semibold text-violet-100">Синопсис / описание книги</span>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={SYNOPSIS_PLACEHOLDER}
+                  rows={10}
+                  spellCheck
+                  className="grimoire-textarea flex-1 min-h-[12rem]"
+                />
+              </label>
+
+              <ShimmerButton
+                onClick={handleBrainstorm}
+                loading={loading}
+                disabled={!description.trim()}
+                className="w-full"
+              >
+                {loading ? '🌀 Ткаем магические узоры…' : '✨ Призвать 3 концепции обложки'}
+              </ShimmerButton>
+
+              {error && (
+                <p className="mt-4 text-sm text-rose-300/90 rounded-lg border border-rose-500/30 bg-rose-950/30 px-3 py-2">
+                  {error}
+                </p>
+              )}
+            </div>
+
+            <MiraSidebar
+              loading={loading}
+              hasConcepts={concepts.length > 0}
+              activeConcept={activeConcept}
+              selectedConceptIndex={selectedConceptIndex}
             />
-          </label>
-
-          <ShimmerButton
-            onClick={handleBrainstorm}
-            loading={loading}
-            disabled={!description.trim()}
-            className="w-full"
-          >
-            {loading ? '🌀 Ткаем магические узоры…' : '✨ Призвать 3 концепции обложки'}
-          </ShimmerButton>
-
-          {error && (
-            <p className="mt-4 text-sm text-rose-300/90 rounded-lg border border-rose-500/30 bg-rose-950/30 px-3 py-2">
-              {error}
-            </p>
-          )}
+          </div>
         </MagicBorder>
 
-        {/* Output — The Concepts */}
         <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between gap-3">
             <p className="grimoire-kicker">✦ Три пути визуала</p>
@@ -136,14 +208,14 @@ export default function BrainstormPanel({
             </MagicBorder>
           )}
 
-          {!loading && concepts.length === 0 && !error && (
+          {showEmptyState && (
             <MagicBorder variant="amber" innerClassName="p-10 flex flex-col items-center justify-center text-center min-h-[200px]">
               <p className="text-4xl mb-3 opacity-50" aria-hidden>
                 📖
               </p>
               <p className="text-sm text-slate-500 max-w-lg leading-relaxed">
-                Здесь появятся три карточки-концепта с названием, описанием для автора и
-                визуальными элементами для иллюстратора.
+                Здесь появятся три карточки-концепта. Кликни на понравившуюся — Мира справа
+                расскажет свой разбор, и откроется путь в кузницу.
               </p>
             </MagicBorder>
           )}
@@ -156,6 +228,8 @@ export default function BrainstormPanel({
                   concept={concept}
                   index={index}
                   delayMs={index * 120}
+                  isSelected={selectedConceptIndex === index}
+                  onSelect={handleSelectConcept}
                   onTransferToForge={onTransferToForge}
                 />
               ))}

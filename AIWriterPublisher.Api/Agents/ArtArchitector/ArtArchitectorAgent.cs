@@ -1,4 +1,5 @@
 using System;
+using Polly;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -286,7 +287,7 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                     ""style"": ""ОБЯЗАТЕЛЬНО. Художественный стиль, техника, освещение, цветовая палитра, настроение. НЕ ДУБЛИРУЙ с composition: здесь — КАК нарисовано, в composition — ОТКУДА камера. ПРИМЕР: 'Реалистичная цифровая живопись, мягкое лунное освещение сквозь пыльную бурю, контрастные тени, палитра: тёмно-синий, коричневый, золотистый от фонарей.'"",
                     ""visual_reference"": ""ОБЯЗАТЕЛЬНО. Визуальный референс или стилевой ориентир. Если пользователь не указал явно — определи по контексту (эпоха, жанр, настроение). ПРИМЕР: 'Колониальная архитектура Карибского бассейна 19 века, тропическая готика, иллюстрации к приключенческим романам.'"",
                     ""composition"": ""ОБЯЗАТЕЛЬНО. ТРИ СЛОЯ И РАКУРС. ПЕРЕДНИЙ ПЛАН: [размытие, частицы]. СРЕДНИЙ ПЛАН: [ракурс камеры, фокус, кто в центре]. ЗАДНИЙ ПЛАН: [общие силуэты, не перечисляй детали — они в environment]. ПРИМЕР: 'ПЕРЕДНИЙ ПЛАН: размытые вихри пыли. СРЕДНИЙ ПЛАН: камера на уровне глаз, патруль в центре, офицер слева. ЗАДНИЙ ПЛАН: силуэты зданий и гор.'""
-                    ""negative_constraints"": ""список запрещённых элементов через запятую на русском (например: текст, водяной знак, размытость, деформация)""
+                    ""negative_constraints"": ""список запрещённых элементов через запятую на русском (например: текст, водяной знак, размытость, деформация и другие). ОБЯЗАТЕЛЬНО. Если пользователь не указал — используй стандартный негативный промпт: 'размытость, низкое качество, плохая анатомия, деформация, водяной знак, текст, лишние конечности, плохие руки'""
                 },
                 ""render_settings"": {
                     ""model"": ""nanobanana-pro"",
@@ -315,12 +316,21 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                 // Безопасно настраиваем авторизацию в HttpClient
                 _httpClient.DefaultRequestHeaders.Remove("Authorization");
 
+                var retryPolicy = Policy
+                .Handle<HttpRequestException>()
+                .OrResult<HttpResponseMessage>(r => r.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                .WaitAndRetryAsync(15, retryAttempt => TimeSpan.FromSeconds(3),
+                    (exception, timeSpan, retryCount, context) =>
+                    {
+                        Console.WriteLine($"[ArtArchitector Warning] OpenRouter словил 429. Попытка {retryCount}, ждем {timeSpan.TotalSeconds} сек...");
+                    });
+
                 Console.WriteLine($"[ArtArchitector Debug] Ключ получен из конфига? {(!string.IsNullOrEmpty(cleanApiKey) ? $"ДА, длина {cleanApiKey.Length} симв." : "НЕТ, ОН ПУСТОЙ")}");
                 
-                var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
-
-                requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanApiKey);
-                Console.WriteLine($"[ArtArchitector Send] Auth Header: {requestMessage.Headers.Authorization}");
+                // var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
+                
+                // requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanApiKey);
+                // Console.WriteLine($"[ArtArchitector Send] Auth Header: {requestMessage.Headers.Authorization}");
                 // Формируем классический payload для OpenAI-совместимого эндпоинта
                 var requestBody = new
                 {
@@ -335,11 +345,18 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                 };
 
                 string jsonPayload = JsonSerializer.Serialize(requestBody);
-                requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                // requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 // Console.WriteLine($"[ArtArchitector] Отправка Магического потока на разбор в модель {modelName}...");
                 // Console.WriteLine($"[ArtArchitector Send] Auth Header: {requestMessage.Headers.Authorization}");
-                HttpResponseMessage httpResponse = await _httpClient.SendAsync(requestMessage);
+                HttpResponseMessage httpResponse = await retryPolicy.ExecuteAsync(async () => 
+                {
+                    var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
+                    requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanApiKey);
+                    requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                    return await _httpClient.SendAsync(requestMessage);
+                });
 
                 // Если первый запрос не удался - делаем fallback
                 if (!httpResponse.IsSuccessStatusCode)

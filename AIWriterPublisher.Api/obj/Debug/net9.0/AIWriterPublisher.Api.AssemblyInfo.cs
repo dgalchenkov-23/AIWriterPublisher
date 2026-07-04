@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AIWriterPublisher.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7c6de9a1ccb65f86e4d03b9bfd833ff702e58f0a")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f510ca4bc00c96879329304f18e5368bc6a2fa62")]
 [assembly: System.Reflection.AssemblyProductAttribute("AIWriterPublisher.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AIWriterPublisher.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

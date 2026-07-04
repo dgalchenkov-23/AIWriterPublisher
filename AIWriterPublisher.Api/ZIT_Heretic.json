@@ -71,10 +71,10 @@
   "6": {
     "inputs": {
       "seed": 537580774849261,
-      "steps": 14,
-      "cfg": 1,
-      "sampler_name": "euler",
-      "scheduler": "simple",
+      "steps": 18,
+      "cfg": 1.5,
+      "sampler_name": "heunpp2",
+      "scheduler": "linear_quadratic",
       "denoise": 1,
       "model": [
         "8",

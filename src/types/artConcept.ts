@@ -5,6 +5,7 @@ export interface ArtConcept {
   visualElements: string;
   rawPrompt: string;
   aspectRatio: string;
+  review: string;
 }
 
 export interface BookDescriptionRequest {

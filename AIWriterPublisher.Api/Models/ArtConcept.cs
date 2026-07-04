@@ -8,6 +8,7 @@ namespace AIWriterPublisher.Api.Models
         public string VisualElements { get; set; } = string.Empty; // Ключевые элементы для визуализации
 
         public string RawPrompt { get; set; } = string.Empty;     // Готовый промпт на английском для SD/MJ
+        public string Review { get; set; } = string.Empty;  // Мнение ИИ-директора по поводу концепта (на русском)
         public string AspectRatio { get; set; } = "2:3";           // Дефолт для книжной обложки
     }
 

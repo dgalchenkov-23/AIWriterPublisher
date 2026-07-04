@@ -11,6 +11,6 @@ namespace AIWriterPublisher.Api.Services
         /// <param name="artArchitectorSpec">Спецификация арт-актора</param>
         /// <param name="analysisModel">Модель анализа</param>
         /// <returns>URL сгенерированного изображения</returns>
-        Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec = null, string aspectRatio = "2:3", string analysisModel = null);
+        Task<string> GenerateImageAsync(EngineeringSpecDto engineeringSpec, TechnicalSpecDto artArchitectorSpec = null, string aspectRatio = "2:3", string analysisModel = null);
     }
 }

@@ -313,7 +313,7 @@
       "Description": "Регулирует уровень детализации изображения. Положительный вес = высокие детали, отрицательный = упрощение.",
       "DetectionKeywords": ["detail", "texture", "sharpness", "slider"],
       "UsageRules": "Использовать для тонкой настройки детализации. Конфликтует с другими улучшайзерами.",
-      "ConflictSet": ["better_images_loraholic", "z-image-aestheticbase-and-turbo"],
+      "ConflictSet": ["better_images_loraholic", "Z-Image-Aesthetic (v1)"],
       "ApplicableGenres": ["All"],
       "Overrides": {}
     },
@@ -433,7 +433,7 @@
       "Description": "Универсальный улучшайзер. Добавляет разнообразие, убирает шаблонность, улучшает качество. Базовый слой.",
       "DetectionKeywords": ["midjourney", "quality", "diverse", "vibrant"],
       "UsageRules": "Использовать для улучшения качества и разнообразия. Конфликтует с другими базовыми улучшайзерами.",
-      "ConflictSet": ["z-image-aestheticbase-and-turbo", "RealisticSnapshot-Zimage-Turbov5", "ZIMAGE-CCD-V1"],
+      "ConflictSet": ["Z-Image-Aesthetic (v1)", "RealisticSnapshot-Zimage-Turbov5", "ZIMAGE-CCD-V1"],
       "ApplicableGenres": ["All"],
       "Overrides": {}
     },

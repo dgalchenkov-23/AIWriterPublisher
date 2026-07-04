@@ -47,7 +47,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     }
 
 
-    public async Task<string> GenerateImageAsync(string technicalPrompt, TechnicalSpecDto artArchitectorSpec, string analysisModel, string aspectRatio = "2:3")
+    public async Task<string> GenerateImageAsync(EngineeringSpecDto engineeringSpec, TechnicalSpecDto artArchitectorSpec, string analysisModel, string aspectRatio = "2:3")
     {
         Console.WriteLine($"[ComfyUI] Запущен процесс генерации с моделью: {analysisModel}");
         string width = "1024";
@@ -69,7 +69,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             height = "768";
         }
 
-        return await GenerateEventHorizonAsync(technicalPrompt, "", artArchitectorSpec, analysisModel);
+        return await GenerateEventHorizonAsync(engineeringSpec.PositivePrompt, engineeringSpec.NegativePrompt, artArchitectorSpec, analysisModel);
     }
 
     public class ComfyUiGraphOrchestrator
@@ -465,6 +465,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
             // Нода 5: CLIPTextEncode (Positive Prompt)
             string positiveNodeId = "5";
+            Console.WriteLine($"[ComfyUI] Подставляем положительный промпт в ноду {positiveNodeId}: {positivePrompt}");
             if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)
             {
                 // У CLIPTextEncode поле называется "text", а не "positive"
@@ -473,12 +474,13 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
             // Нода 4: CLIPTextEncode (Negative Prompt)
             string negativeNodeId = "4";
+            Console.WriteLine($"[ComfyUI] Подставляем отрицательный промпт в ноду {negativeNodeId}: {negativePrompt}");
             if (graph.TryGetPropertyValue(negativeNodeId, out var negNode) && negNode?["inputs"] is JsonObject negInputs)
             {
                 // У CLIPTextEncode поле называется "text", а не "negative"
                 negInputs["text"] = negativePrompt;
             }
-            //Console.WriteLine($"Полный граф: \r\n {graph.ToString()}");
+            Console.WriteLine($"Полный граф: \r\n {graph.ToString()}");
             await CheckComfyUiHealthAsync();
 
             var requestBody = new JsonObject { ["prompt"] = graph };

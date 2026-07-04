@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react';
 import MagicBorder from '../../../components/magic/MagicBorder';
 import type { ArtConcept } from '../../../types/artConcept';
 
@@ -7,6 +8,8 @@ interface ConceptCardProps {
   concept: ArtConcept;
   index: number;
   delayMs?: number;
+  isSelected: boolean;
+  onSelect: (concept: ArtConcept, index: number) => void;
   onTransferToForge: (concept: ArtConcept) => void;
 }
 
@@ -14,21 +17,57 @@ export default function ConceptCard({
   concept,
   index,
   delayMs = 0,
+  isSelected,
+  onSelect,
   onTransferToForge,
 }: ConceptCardProps) {
   const variant = variants[index % variants.length];
-  const canTransfer = Boolean(concept.rawPrompt.trim());
+  const canTransfer = Boolean(concept.rawPrompt.trim()) && isSelected;
+
+  const handleCardClick = () => {
+    onSelect(concept, index);
+  };
+
+  const handleForgeClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!isSelected) return;
+    if (!concept.rawPrompt.trim()) return;
+    onTransferToForge(concept);
+  };
 
   return (
-    <div className="concept-card-enter h-full" style={{ animationDelay: `${delayMs}ms` }}>
+    <div
+      className={`concept-card-enter h-full cursor-pointer transition-transform duration-200 ${
+        isSelected ? 'concept-card--selected scale-[1.02]' : 'hover:scale-[1.01]'
+      }`}
+      style={{ animationDelay: `${delayMs}ms` }}
+      onClick={handleCardClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleCardClick();
+        }
+      }}
+      aria-pressed={isSelected}
+      aria-label={`Выбрать концепт ${index + 1}: ${concept.title}`}
+    >
       <MagicBorder
         variant={variant}
-        className="h-full"
+        className={`h-full ${isSelected ? 'concept-border--selected' : ''}`}
         innerClassName="h-full p-5 md:p-6 flex flex-col gap-4"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <span className="grimoire-kicker">Концепт {concept.id}</span>
+            <span className="grimoire-kicker">
+              Концепт {index + 1}
+              {isSelected && (
+                <span className="ml-2 text-emerald-400/90 normal-case tracking-normal text-[10px]">
+                  ✓ выбран
+                </span>
+              )}
+            </span>
             {concept.aspectRatio && (
               <span className="text-[10px] font-mono text-violet-400/60">
                 📐 {concept.aspectRatio}
@@ -55,18 +94,22 @@ export default function ConceptCard({
 
         <button
           type="button"
-          onClick={() => onTransferToForge(concept)}
+          onClick={handleForgeClick}
           disabled={!canTransfer}
           className="forge-transfer-btn w-full mt-1"
           title={
-            canTransfer
-              ? 'Открыть Self-Prompt с готовым техническим промптом'
-              : 'Технический промпт ещё не сгенерирован'
+            !isSelected
+              ? 'Сначала выбери концепт и послушай, что думает Мира!'
+              : canTransfer
+                ? 'Открыть Self-Prompt с готовым техническим промптом'
+                : 'Технический промпт ещё не сгенерирован'
           }
         >
           <span className="forge-transfer-btn__glow" aria-hidden />
           <span className="forge-transfer-btn__shimmer" aria-hidden />
-          <span className="forge-transfer-btn__label">⚒️ Передать в кузницу (Self-Prompt)</span>
+          <span className="forge-transfer-btn__label">
+            {isSelected ? '⚒️ Передать в кузницу (Self-Prompt)' : '👆 Сначала выбери концепт'}
+          </span>
         </button>
       </MagicBorder>
     </div>

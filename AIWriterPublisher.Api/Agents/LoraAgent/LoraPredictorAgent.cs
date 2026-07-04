@@ -214,7 +214,7 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
         ═══════════════════════════════════════════════════════════════════
 
         ШАГ 1: ТЕХНИЧЕСКИЙ БАЗИС (Автоматически в Слот 1, если массив не пустой)
-        -> Название: Distill Patch (Technical Layer) | Файл: z-image_turbo_distillpatch_comfyui.safetensors | Вес: 1.0 жестко.
+        -> ВЫБЕРИ ОДНУ LORA из Category: ""Base_Enhancer"" наиболее подходящее промпту автора
 
         ШАГ 2: ХУДОЖЕСТВЕННЫЙ ЦЕНТР (Слот 2 и 3 — КРИТИЧЕСКИЙ ПРИОРИТЕТ)
         Выдели ключевые жанровые маркеры в промпте и выбери под них специализированные модели из списка:
@@ -230,9 +230,9 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
         • Эффекты: Fog & Smoke Slider (smoke_loraholic.safetensors, вес 3.0-5.0 для дыма), Water Droplets.
         • Персонаж: Hair Length Slider (hair_length_loraholic.safetensors), Side View Slider, Skin Detail Slider, Eye Detail (EyeDetail_Z_Turbo.safetensors, триггер: eye_focus).
 
-        ШАГ 4: ТЕХНИЧЕСКАЯ ПОДДЕРЖКА (Добирается в последнюю очередь для баланса)
-        • Добавь Z-Image-Aestheticbase-and-turbo.safetensors (вес 1.0, или 0.4 для ночных/темных сцен).
-        • Добавь Better Images / Prompt Slider (вес 2.0-4.0).
+        ШАГ 4: ТЕХНИЧЕСКАЯ ПОДДЕРЖКА 
+            ПЕРЕПРОВЕРЬ СЕБЯ! У тебя должен быть Технический ""Base_Enhancer"" в Слоте 1, Художественные ЛоРА в слотах 2 и 3.
+            Но не добавляй стили бездумно, если они не соответствуют контексту!
         *ВАЖНО:* Использовать не более 2-х моделей категории ""Base_Enhancer""!
 
         ═══════════════════════════════════════════════════════════════════
@@ -276,10 +276,6 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
 
         private async Task<string> CallLlmApiAsync(string system, string user)
         {
-            // string baseUrl = _configuration["AIServices:Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta/openai/";
-            // string apiKey = _configuration["AIServices:Gemini:ApiKey"] ?? "";
-            // string modelName = _configuration["AIServices:Gemini:Model"] ?? "gemini-3.1-flash-lite";
-            // string cleanApiKey = apiKey?.Trim() ?? "";
 
             string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
             string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
@@ -291,7 +287,7 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
             var retryPolicy = Policy
                 .Handle<HttpRequestException>()
                 .OrResult<HttpResponseMessage>(r => r.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-                .WaitAndRetryAsync(7, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), 
+                .WaitAndRetryAsync(15, retryAttempt => TimeSpan.FromSeconds(3),
                     (exception, timeSpan, retryCount, context) =>
                     {
                         Console.WriteLine($"[LoraAgent Warning] OpenRouter словил 429. Попытка {retryCount}, ждем {timeSpan.TotalSeconds} сек...");
