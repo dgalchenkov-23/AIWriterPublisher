@@ -522,6 +522,124 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         }
     }
 
+
+
+    public async Task<string> ExecuteCharacterInferenceAsync(
+        string finalPrompt, List<LoraPreset> loras, string? faceReferenceUrl, 
+        CancellationToken ct)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // 1. Динамически выбираем шаблон графа в зависимости от наличия FaceSwap
+            bool isFaceSwapRequired = !string.IsNullOrEmpty(faceReferenceUrl);
+            string workflowFileName = isFaceSwapRequired ? "ZIT_Hero_FaceSwap.json" : "ZIT_Heretic.json";
+            string workflowPath = Path.Combine(AppContext.BaseDirectory, workflowFileName);
+
+            if (!File.Exists(workflowPath))
+            {
+                throw new FileNotFoundException($"Шаблон графа ComfyUI не найден: {workflowPath}");
+            }
+
+            string workflowJson = await File.ReadAllTextAsync(workflowPath, ct);
+            _logger.LogInformation("[ComfyUI] Загружен граф {Workflow}. FaceSwap: {IsFaceSwap}", workflowFileName, isFaceSwapRequired);
+
+            // 2. Мапим во внутреннюю структуру для инжектора Лора-нод
+            var lorasToInject = loras.Select(l => new LoraConfig
+            {
+                DisplayName = l.DisplayName,
+                FileName = l.FileName,
+                StrengthModel = l.DefaultWeight, // Используем вес, рассчитанный Ларой
+                StrengthClip = l.DefaultWeight
+            }).ToList();
+
+            // Подгружаем манифест для проверки оверрайдов
+            string manifestPath = Path.Combine(AppContext.BaseDirectory, "lora_portrait_manifest.json");
+            string rawManifestJson = File.Exists(manifestPath) 
+                ? await File.ReadAllTextAsync(manifestPath, ct) 
+                : string.Empty;
+
+            // Врезаем цепочку Лорок в граф
+            string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject, rawManifestJson, _zImageOrchestrator);
+
+            var graph = JsonNode.Parse(loraGraph)?.AsObject();
+            if (graph == null) throw new InvalidOperationException("Не удалось распарсить итоговый JSON графа.");
+
+            // 3. Подставляем промпты в стандартные ноды
+            // Нода 5: Positive Prompt
+            string positiveNodeId = "5";
+            if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)
+            {
+                posInputs["text"] = finalPrompt;
+            }
+
+            // Нода 4: Negative Prompt (для Flux можно оставлять пустым или зашивать дефолт)
+            string negativeNodeId = "4";
+            if (graph.TryGetPropertyValue(negativeNodeId, out var negNode) && negNode?["inputs"] is JsonObject negInputs)
+            {
+                negInputs["text"] = "bad anatomy, blurry, low quality, deformed, extra limbs";
+            }
+
+            // 4. Если нужен FaceSwap — настраиваем ноду ReActor / IP-Adapter
+            if (isFaceSwapRequired)
+            {
+                // Предположим, нода FaceSwap в твоем графе ZIT_Hero_FaceSwap.json имеет ID "10"
+                string faceSwapNodeId = "10"; 
+                _logger.LogInformation("[ComfyUI] Инжектим ссылку на лицо в ноду {NodeId}: {Url}", faceSwapNodeId, faceReferenceUrl);
+                
+                if (graph.TryGetPropertyValue(faceSwapNodeId, out var fsNode) && fsNode?["inputs"] is JsonObject fsInputs)
+                {
+                    // Поле может называться "image" или "image_path" в зависимости от кастомной ноды загрузки картинок по URL
+                    fsInputs["image_url"] = faceReferenceUrl; 
+                }
+                else
+                {
+                    _logger.LogWarning("[ComfyUI] Предупреждение: Нода FaceSwap с ID {NodeId} не найдена в графе!", faceSwapNodeId);
+                }
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            // 5. Проверяем здоровье ComfyUI и отправляем запрос
+            await CheckComfyUiHealthAsync();
+
+            var requestBody = new JsonObject { ["prompt"] = graph };
+            
+            // Используем встроенный токен отмены для HttpClient запроса
+            var response = await _httpClient.PostAsJsonAsync($"{ComfyUrl}/prompt", requestBody, ct);
+            response.EnsureSuccessStatusCode();
+
+            string jsonResponse = await response.Content.ReadAsStringAsync(ct);
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var queueResult = System.Text.Json.JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, options);
+
+            if (queueResult == null || string.IsNullOrEmpty(queueResult.PromptId))
+            {
+                throw new InvalidOperationException("ComfyUI не вернул PromptId очереди.");
+            }
+
+            _logger.LogInformation("[ComfyUI] Запрос успешно поставлен в очередь. PromptId: {PromptId}", queueResult.PromptId);
+            
+            // 6. Уходим в поллинг ожидания генерации файла (передаем токен отмены внутрь)
+            var generationResult = await PollAndGetResultAsync(queueResult.PromptId, ct);
+
+            return generationResult.Base64;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("[ComfyUI] Генерация была отменена пользователем.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Критическая ошибка инференса персонажа в ExecuteCharacterInferenceAsync");
+            throw;
+        }
+    }
+
+
     
 
     // Дополнительный метод для скачивания изображения в байты (если нужно сохранить локально)
@@ -539,7 +657,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     /// <summary>
     /// Ожидает завершения генерации и возвращает результат (base64 для фронта + имя файла)
     /// </summary>
-    private async Task<GenerationResult> PollAndGetResultAsync(string promptId)
+    private async Task<GenerationResult> PollAndGetResultAsync(string promptId, CancellationToken cancellationToken = default)
     {
         string? fileName = null;
         string? subFolder = null;

@@ -6,6 +6,8 @@ using AIWriterPublisher.Api.Agents.LoraAgent;
 using AIWriterPublisher.Api.Agents.LoraAgent.Interface;
 using AIWriterPublisher.Api.Agents.PromptEngineer;
 using AIWriterPublisher.Api.Agents.ArtArchitector;
+using AIWriterPublisher.Api.Agents.HeroFaceAgent;
+using AIWriterPublisher.Api.Agents.HeroCharAgent;
 using System.Net;
 using System.Net.Http;
 
@@ -66,8 +68,12 @@ builder.Services.AddScoped<LoraPredictorAgent>();
 builder.Services.AddTransient<PromptEngineerAgent>(); 
 builder.Services.AddTransient<ArtArchitectorAgent>();
 builder.Services.AddTransient<VisionEditorAgent>();
+builder.Services.AddTransient<HeroFaceAgent>();
+builder.Services.AddTransient<HeroCharAgent>();
+builder.Services.AddTransient<HeroPortraitLoraAgent>();
 // Регистрируем сервис оркестрации Лор, который будет работать с ИИ-агентом
 builder.Services.AddScoped<LoraOrchestrationService>();
+builder.Services.AddScoped<HeroCharacterOrchestrator>();
 builder.Services.AddSingleton<ZImageGraphOrchestrator>();
 builder.Services.AddScoped<ILoraOrchestrationService, LoraOrchestrationService>();
 // Регистрируем генераторы картинок

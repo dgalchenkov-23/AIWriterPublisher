@@ -11,6 +11,7 @@ export default function Sidebar({ activeMode, onModeChange }: SidebarProps) {
     { mode: 'Self-Prompt', label: 'Self-Prompt', icon: '⚙️', desc: 'Инженерный пульт' },
     { mode: 'SceneMaker', label: 'Scene Maker', icon: '📖', desc: 'Генерация из глав' },
     { mode: 'Typography', label: 'Типографика', icon: '🎨', desc: 'Наложение текста' },
+    { mode: 'HeroesForge', label: 'Кузница Героев', icon: '⚒️', desc: 'Генерация персонажей в два этапа' }
   ];
 
   return (

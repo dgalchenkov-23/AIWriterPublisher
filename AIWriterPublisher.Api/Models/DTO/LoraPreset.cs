@@ -8,6 +8,8 @@ namespace AIWriterPublisher.Api.Models.DTO;
         public double StrengthModel { get; set; } = 1.0;
         public double StrengthClip { get; set; } = 1.0;
         public string TriggerWords { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public bool isFullBody { get; set; } = false;
         
         // Новое поле для передачи переопределений параметров генерации (Steps, CFG, Sampler, Scheduler)
         public Dictionary<string, object>? Overrides { get; set; } = null;

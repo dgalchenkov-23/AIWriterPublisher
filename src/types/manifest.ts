@@ -1,4 +1,4 @@
-export type AppMode = 'Brainstorm' | 'Self-Prompt' | 'SceneMaker' | 'Typography';
+export type AppMode = 'Brainstorm' | 'Self-Prompt' | 'SceneMaker' | 'Typography' | 'HeroesForge';
 
 export type AnalysisModel = 'gpt-oss-120b' | 'gemini-flash' | 'ollama-qwen-2-7b';
 

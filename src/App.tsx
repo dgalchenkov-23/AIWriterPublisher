@@ -4,6 +4,7 @@ import { loadManifestFromStorage, persistManifest } from './lib/manifestStorage'
 import { applyAspectRatioToRenderSettings } from './lib/applyConceptToSelfPrompt';
 import BrainstormPanel from './modules/brainstorm/components/BrainstormPanel';
 import SelfPromptForm from './modules/self-prompt/components/SelfPromptForm';
+import HeroForgeComponent from './modules/self-prompt/components/HeroForgeComponent';
 import type { ArtConcept } from './types/artConcept';
 import type {
   AppMode,
@@ -19,6 +20,7 @@ const modeLabels: Record<AppMode, string> = {
   'Self-Prompt': 'Direct Prompt',
   SceneMaker: 'Scene Maker',
   Typography: 'Типографика',
+  HeroesForge: 'Кузница Героев',
 };
 
 export default function App() {
@@ -87,6 +89,7 @@ export default function App() {
   const { current_mode, generation_history } = manifest;
   const isSelfPrompt = current_mode === 'Self-Prompt';
   const isBrainstorm = current_mode === 'Brainstorm';
+  const isHeroesForge = current_mode === 'HeroesForge';
 
   return (
     <div className="flex h-full min-h-screen grimoire-shell">
@@ -102,7 +105,7 @@ export default function App() {
               project: {manifest.project_id.slice(0, 8)}…
             </p>
           </div>
-          {!isSelfPrompt && !isBrainstorm && (
+          {!isSelfPrompt && !isBrainstorm && !isHeroesForge && (
             <button
               type="button"
               onClick={handleDemoGeneration}
@@ -127,6 +130,13 @@ export default function App() {
               onTechnicalSpecChange={handleTechnicalSpecChange}
               onRenderSettingsChange={handleRenderSettingsChange}
               onSelfPromptChange={handleSelfPromptChange}
+            />
+          ) : isHeroesForge ? (
+            <HeroForgeComponent
+              selfPrompt={manifest.self_prompt}
+              technicalSpec={manifest.technical_spec}
+              renderSettings={manifest.render_settings}
+              onAddGeneration={addGeneration}
             />
           ) : (
             <div className="max-w-3xl">
