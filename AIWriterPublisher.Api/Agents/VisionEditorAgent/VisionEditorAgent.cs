@@ -55,6 +55,11 @@ namespace AIWriterPublisher.Api.Agents.VisionEditorAgent
                     PropertyNameCaseInsensitive = true 
                 });
 
+                if (result is null)
+                {
+                    throw new InvalidOperationException("Vision API вернул пустой ответ.");
+                }
+
                 // Сохраняем исходный путь, так как модель его не знает
                 result.ReferenceImagePath = imagePath;
                 return result;
@@ -142,7 +147,7 @@ namespace AIWriterPublisher.Api.Agents.VisionEditorAgent
                 _logger.LogInformation("Получен ответ от Vision API");
                 if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
                 {
-                    string? rawJsonText = choices[0].GetProperty("message").GetProperty("content").GetString();
+                    string rawJsonText = choices[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
                     _logger.LogInformation("Получен ответ от Vision API: {Response}", rawJsonText);
                     return rawJsonText;
                 }

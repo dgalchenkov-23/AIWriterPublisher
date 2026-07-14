@@ -28,9 +28,9 @@ namespace AIWriterPublisher.Api.Models.DTO;
     // Конфигурация для работы с LoRA
     public class LoraConfig
     {
-        public string DisplayName { get; set; }
-        public string FileName { get; set; }
-        public string TriggerWords { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string TriggerWords { get; set; } = string.Empty;
         public double StrengthModel { get; set; }
         public double StrengthClip { get; set; }
     }
@@ -39,6 +39,6 @@ namespace AIWriterPublisher.Api.Models.DTO;
     {
         public int Steps { get; set; }
         public float Cfg { get; set; }
-        public string SamplerName { get; set; }
-        public string Scheduler { get; set; }
+        public string SamplerName { get; set; } = string.Empty;
+        public string Scheduler { get; set; } = string.Empty;
     }

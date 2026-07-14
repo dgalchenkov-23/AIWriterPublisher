@@ -88,13 +88,7 @@ namespace AIWriterPublisher.Api.Agents.ArtDirector
                     max_tokens = 2000, // Максимальное количество слов в ответе
                 };
 
-            // var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
-            // requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanApiKey);
-
             string jsonPayload = JsonSerializer.Serialize(requestBody);
-            // requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-            
-            // var httpResponse = await _httpClient.SendAsync(requestMessage);
             //Используем Polly для повторных попыток при 429 Too Many Requests
             HttpResponseMessage httpResponse = await retryPolicy.ExecuteAsync(async () => 
                 {
@@ -120,15 +114,11 @@ namespace AIWriterPublisher.Api.Agents.ArtDirector
             if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
             {
                 string? rawJsonText = choices[0].GetProperty("message").GetProperty("content").GetString();
-                Console.WriteLine($"[ArtDirector Success] получен ответ от модели.");
                 
                 if (!string.IsNullOrEmpty(rawJsonText))
                 {
                     // Очистка от markdown-тегов ```json ... ```                        
                     rawJsonText = rawJsonText.Replace("```json", "").Replace("```", "").Replace("json", "").Trim();
-                    
-                    Console.WriteLine($"[ArtDirector Success] Получен JSON от модели.");
-                    Console.WriteLine($"[ArtDirector Success] Raw JSON:\r\n {rawJsonText}\r\n");
 
                     // Безопасно парсим полученный JSON в список (List) концептов
                     using var parsedDoc = JsonDocument.Parse(rawJsonText);

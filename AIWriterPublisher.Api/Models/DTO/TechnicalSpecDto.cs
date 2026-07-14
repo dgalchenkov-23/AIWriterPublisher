@@ -123,6 +123,6 @@ public sealed class GenerationPipelineRequest
 
 public class OptimizedGraphResult
 {
-    public KSamplerSettings SamplerSettings { get; set; }
-    public List<LoraConfig> PatchedLoras { get; set; }
+    public KSamplerSettings SamplerSettings { get; set; } = new();
+    public List<LoraConfig> PatchedLoras { get; set; } = new();
 }

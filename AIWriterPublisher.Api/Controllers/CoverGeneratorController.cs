@@ -84,13 +84,13 @@ namespace AIWriterPublisher.Api.Controllers
                     if (string.IsNullOrWhiteSpace(request.RawPrompt))
                         return BadRequest("Промпт для распознавания не может быть пустым.");
 
-                    finalSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, request.AnalysisModel);
-                    engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
+                    finalSpec = await _artArchitector.AnalyzeUserInputAsync(request.RawPrompt, request.AnalysisModel ?? string.Empty);
+                    engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel ?? string.Empty);
                 }
                 else 
                 {
                     Console.WriteLine("[Direct Engine] Режим «Строгие слои» активирован. Используем предоставленную структуру ТZ.");
-                    engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel);
+                    engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(finalSpec, request.AnalysisModel ?? string.Empty);
                 }
 
                 Console.WriteLine($"[Direct Engine] Итоговый плоский промпт для модели: {engineeringSpec.PositivePrompt}");
@@ -112,7 +112,7 @@ namespace AIWriterPublisher.Api.Controllers
                     }
                     else
                     {
-                        base64Image = await _imageGenerator.GenerateImageAsync(engineeringSpec, finalSpec, request.AnalysisModel, targetAspectRatio);
+                        base64Image = await _imageGenerator.GenerateImageAsync(engineeringSpec, finalSpec, targetAspectRatio, request.AnalysisModel ?? string.Empty);
                     }
                 }
                 else
@@ -120,7 +120,7 @@ namespace AIWriterPublisher.Api.Controllers
                     Console.WriteLine("[Direct Engine] Выбран стандартный движок генерации проекта (ComfyUI).");
                     if (_imageGenerator is ComfyUiImageGenerator comfyGenerator)
                     {
-                        base64Image = await comfyGenerator.GenerateImageAsync(engineeringSpec, finalSpec, request.AnalysisModel, targetAspectRatio);
+                        base64Image = await comfyGenerator.GenerateImageAsync(engineeringSpec, finalSpec, targetAspectRatio, request.AnalysisModel ?? string.Empty);
                     }
                 }
 
@@ -182,7 +182,7 @@ namespace AIWriterPublisher.Api.Controllers
                     // РЕЖИМ СТРОГИХ СЛОЕВ: Используем PromptEngineer для сборки текста
                     _logger.LogInformation("[Z-Image] Сборка промпта из технических слоев...");
                     TechnicalSpecDto spec = request.TechnicalSpec ?? new TechnicalSpecDto();
-                    EngineeringSpecDto engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(spec, request.AnalysisModel);
+                    EngineeringSpecDto engineeringSpec = await _promptEngineerAgent.GenerateTechnicalPromptAsync(spec, request.AnalysisModel ?? string.Empty);
 
                     editSpec = new ComfyUiImg2ImgSpecDto 
                     { 

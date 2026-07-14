@@ -41,35 +41,16 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     /// </summary>
     public class GenerationResult
     {
-        public string Base64 { get; set; }
-        public string FileName { get; set; }
-        public string SubFolder { get; set; }
+        public string Base64 { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string SubFolder { get; set; } = string.Empty;
     }
 
 
-    public async Task<string> GenerateImageAsync(EngineeringSpecDto engineeringSpec, TechnicalSpecDto artArchitectorSpec, string analysisModel, string aspectRatio = "2:3")
+    public async Task<string> GenerateImageAsync(EngineeringSpecDto engineeringSpec, TechnicalSpecDto? artArchitectorSpec = null, string aspectRatio = "2:3", string? analysisModel = null)
     {
-        Console.WriteLine($"[ComfyUI] Запущен процесс генерации с моделью: {analysisModel}");
-        string width = "1024";
-        string height = "1024";
-
-        if (aspectRatio == "2:3")
-        {
-            width = "832";
-            height = "1248";
-        }
-        else if (aspectRatio == "3:2")
-        {
-            width = "1248";
-            height = "832";
-        }
-        else if (aspectRatio == "16:9")
-        {
-            width = "1344";
-            height = "768";
-        }
-
-        return await GenerateEventHorizonAsync(engineeringSpec.PositivePrompt, engineeringSpec.NegativePrompt, artArchitectorSpec, analysisModel);
+        Console.WriteLine($"[ComfyUI] Запущен процесс генерации с моделью: {analysisModel ?? "default"}");
+        return await GenerateEventHorizonAsync(engineeringSpec.PositivePrompt, engineeringSpec.NegativePrompt, artArchitectorSpec ?? new TechnicalSpecDto(), analysisModel ?? string.Empty);
     }
 
     public class ComfyUiGraphOrchestrator
@@ -83,17 +64,18 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             var optimizationResult = orchestrator.OptimizeGraph(lorasToInject);
 
             // 2. Мапим настройки KSampler (Нода "6")
-            var kSamplerInputs = graph["6"]["inputs"];
-            kSamplerInputs["steps"] = optimizationResult.SamplerSettings.Steps;
-            kSamplerInputs["cfg"] = optimizationResult.SamplerSettings.Cfg;
-            kSamplerInputs["sampler_name"] = optimizationResult.SamplerSettings.SamplerName;
-            kSamplerInputs["scheduler"] = optimizationResult.SamplerSettings.Scheduler;
+            var kSamplerInputs = graph["6"]?["inputs"] as JObject;
+            if (kSamplerInputs != null)
+            {
+                kSamplerInputs["steps"] = optimizationResult.SamplerSettings.Steps;
+                kSamplerInputs["cfg"] = optimizationResult.SamplerSettings.Cfg;
+                kSamplerInputs["sampler_name"] = optimizationResult.SamplerSettings.SamplerName;
+                kSamplerInputs["scheduler"] = optimizationResult.SamplerSettings.Scheduler;
+            }
 
             // 3. Инжекция цепочки в Power Lora Loader (Нода "8")
-            if (graph["8"] != null && graph["8"]["inputs"] != null)
+            if (graph["8"]? ["inputs"] is JObject loraLoaderInputs)
             {
-                var loraLoaderInputs = (JObject)graph["8"]["inputs"];
-                
                 // Чистим старые слоты lora_
                 var keysToRemove = loraLoaderInputs.Properties()
                     .Select(p => p.Name)
@@ -175,7 +157,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     /// <summary>
     /// Копирует файл из output в input для использования в качестве маски
     /// </summary>
-    private async Task<string> CopyMaskToInputAsync(string maskFileName, string subFolder = null)
+    private async Task<string> CopyMaskToInputAsync(string maskFileName, string? subFolder = null)
     {
         // Скачиваем файл из output
         string viewUrl = $"{ComfyUrl}/view?filename={Uri.EscapeDataString(maskFileName)}&type=output";
@@ -201,7 +183,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         var uploadedName = uploadResult["name"]?.ToString();
         
         _logger.LogInformation("Маска скопирована из output в input: {FileName}", uploadedName);
-        return uploadedName;
+        return uploadedName ?? string.Empty;
     }
 
     /// <summary>
@@ -295,7 +277,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     /// <summary>
     /// Загружает изображение в ComfyUI и возвращает ТОЛЬКО имя файла
     /// </summary>
-    private async Task<string> UploadImageToComfyUiAndGetNameAsync(string input)
+    private async Task<string> UploadImageToComfyUiAndGetNameAsync(string? input)
     {
         if (string.IsNullOrEmpty(input)) return string.Empty;
 
@@ -327,14 +309,14 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         var uploadResult = JObject.Parse(jsonResponse);
         var fileName = uploadResult["name"]?.ToString();
         
-        return fileName;
+        return fileName ?? string.Empty;
     }
 
             
     /// <summary>
     /// Генерация маски (возвращает результат с base64 для фронта и именем файла)
     /// </summary>
-    private async Task<GenerationResult> GenerateMaskAsync(string referenceImagePath, string maskDescription)
+    private async Task<GenerationResult> GenerateMaskAsync(string referenceImagePath, string? maskDescription)
     {
         try
         {
@@ -414,10 +396,10 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             }
 
             string workflowJson = await File.ReadAllTextAsync(workflowPath);
-            Console.WriteLine($"[ComfyUI] Шаблон графа Juggernaut XL загружен. Подготовка к генерации... готовит промпт модель: {analysisModel}");
+            Console.WriteLine($"[ComfyUI] Шаблон графа Juggernaut XL загружен. Подготовка к генерации... готовит промпт модель: {analysisModel ?? "default"}");
             // 1. Запрашиваем у ИИ-оркестратора Лоры на основе входящего промпта
             // Передаем "All" или дефолтный жанр, так как ИИ-агент внутри сам разберется по контексту текста
-            var selectedLoras = await _loraOrchestrator.PrepareLorasForGenerationAsync("All", artArchitectorSpec, analysisModel);
+            var selectedLoras = await _loraOrchestrator.PrepareLorasForGenerationAsync("All", artArchitectorSpec ?? new TechnicalSpecDto(), analysisModel ?? string.Empty);
 
             /// 2. ДОПИСЫВАЕМ ТРИГГЕРНЫЕ СЛОВА В ПРОМПТ
             // Собираем все непустые триггеры от выбранных Лор
@@ -459,7 +441,6 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject, rawManifestJson, _zImageOrchestrator);
 
             var graph = JsonNode.Parse(loraGraph)?.AsObject();
-            //var graph = JsonNode.Parse(workflowJson)?.AsObject();
 
             if (graph == null) throw new InvalidOperationException("Не удалось распарсить JSON.");
 
@@ -480,7 +461,6 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
                 // У CLIPTextEncode поле называется "text", а не "negative"
                 negInputs["text"] = negativePrompt;
             }
-            Console.WriteLine($"Полный граф: \r\n {graph.ToString()}");
             await CheckComfyUiHealthAsync();
 
             var requestBody = new JsonObject { ["prompt"] = graph };
@@ -492,9 +472,14 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             var queueResult = System.Text.Json.JsonSerializer.Deserialize<ComfyQueueResponse>(jsonResponse, options);
 
+            if (queueResult == null || string.IsNullOrWhiteSpace(queueResult.PromptId))
+            {
+                throw new InvalidOperationException("ComfyUI не вернул PromptId очереди.");
+            }
+
             Console.WriteLine($"[ComfyUI] получили результат очереди: {queueResult.PromptId}");
             
-            var generationResult = await PollAndGetResultAsync(queueResult!.PromptId);
+            var generationResult = await PollAndGetResultAsync(queueResult.PromptId);
 
             return generationResult.Base64;
         }
@@ -578,7 +563,10 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
             // 3. Генерируем случайный seed для KSampler (Нода "6") для разнообразия генераций
             long newSeed = Random.Shared.NextInt64(1, 999999999999999);
-            graph["6"]["inputs"]["seed"] = newSeed;
+            if (graph["6"]?["inputs"] is JsonObject samplerInputs)
+            {
+                samplerInputs["seed"] = newSeed;
+            }
             // 4. Подставляем промпты в стандартные ноды
             // Нода 5: Positive Prompt
             string positiveNodeId = "5";
@@ -658,7 +646,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     
 
     // Дополнительный метод для скачивания изображения в байты (если нужно сохранить локально)
-    private async Task<byte[]> DownloadImageAsync(string fileName, string subFolder = null)
+    private async Task<byte[]> DownloadImageAsync(string fileName, string? subFolder = null)
     {
         string viewUrl = $"{ComfyUrl}/view?filename={Uri.EscapeDataString(fileName)}&type=output";
         if (!string.IsNullOrEmpty(subFolder))
@@ -672,8 +660,13 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
     /// <summary>
     /// Ожидает завершения генерации и возвращает результат (base64 для фронта + имя файла)
     /// </summary>
-    private async Task<GenerationResult> PollAndGetResultAsync(string promptId, CancellationToken cancellationToken = default)
+    private async Task<GenerationResult> PollAndGetResultAsync(string? promptId, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(promptId))
+        {
+            throw new ArgumentException("PromptId не может быть пустым.", nameof(promptId));
+        }
+
         string? fileName = null;
         string? subFolder = null;
         bool isCompleted = false;
@@ -797,8 +790,8 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
         return new GenerationResult
         {
             Base64 = base64,
-            FileName = fileName,
-            SubFolder = subFolder
+            FileName = fileName ?? string.Empty,
+            SubFolder = subFolder ?? string.Empty
         };
     }
 }

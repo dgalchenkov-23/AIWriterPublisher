@@ -23,10 +23,8 @@ namespace AIWriterPublisher.Api.Services
         /// <summary>
         /// Реализация интерфейсного метода. Маппит пропорции и шлет запрос во Flux.
         /// </summary>
-        public async Task<string> GenerateImageAsync(EngineeringSpecDto engineeringSpec, TechnicalSpecDto artArchitectorSpec, string analysisModel, string aspectRatio = "2:3")
+        public async Task<string> GenerateImageAsync(EngineeringSpecDto engineeringSpec, TechnicalSpecDto? artArchitectorSpec = null, string aspectRatio = "2:3", string? analysisModel = null)
         {
-            // Маппим привычные Кате пропорции обложки в пиксели, которые понимает Flux.1-dev
-            // Базируемся на золотом стандарте ~1 мегапиксель для Flux
             string width = "1024";
             string height = "1024";
 
@@ -46,8 +44,7 @@ namespace AIWriterPublisher.Api.Services
                 height = "768";
             }
 
-            // Вызываем наш прямой enterprise-пайплайн к Hugging Face
-            // return await GenerateFluxViaHuggingFaceAsync(technicalPrompt, width, height);
+            Console.WriteLine($"[HF Engine] Подготовка генерации для соотношения {aspectRatio}: {width}x{height}");
             return await GenerateFluxViaPollinationsAsync(engineeringSpec.PositivePrompt, width, height, artArchitectorSpec);
         }
 
@@ -102,30 +99,17 @@ namespace AIWriterPublisher.Api.Services
         /// <summary>
         /// Выделенный метод для работы с Hugging Face Inference API.
         /// </summary>
-        public async Task<string> GenerateFluxViaPollinationsAsync(string prompt, string width, string height, TechnicalSpecDto artArchitectorSpec = null)
+        public async Task<string> GenerateFluxViaPollinationsAsync(string prompt, string width, string height, TechnicalSpecDto? artArchitectorSpec = null)
         {
             try
             {
-                // 1. Формируем единый промпт. В Pollinations ограничения подмешиваются через текстовое отрицание.
-                // string combinedPrompt = string.IsNullOrWhiteSpace(negativePrompt) 
-                //     ? fullPrompt 
-                //     : $"{fullPrompt}. Avoid, negative: {negativePrompt}";
-
                 string encodedPrompt = Uri.EscapeDataString(prompt);
 
-                // Разбираем размер (например, "1024x1024" -> width=1024, height=1024)
-                // string[] dimensions = size.Split('x');
-                // string width = dimensions.Length > 0 ? dimensions[0] : "1024";
-                // string height = dimensions.Length > 1 ? dimensions[1] : "1024";
-
-                // Рандомный seed, чтобы генерации всегда были уникальными и не кэшировались сервером
                 int seed = new Random().Next(1, 999999);
 
-                // 2. Собираем URL. Задаем модель flux для качественного инференса
                 string imageUrl = $"https://image.pollinations.ai/p/{encodedPrompt}?model=zimage&width={width}&height={height}&seed={seed}&enhance=true&safe=true";
-                // string imageUrl = $"https://gen.pollinations.ai/image/{encodedPrompt}?model=flux&width={width}&height={height}&seed={seed}&enhance=true&safe=true";
 
-                // 3. Выполняем запрос к Pollinations
+                // Выполняем запрос к Pollinations
                 HttpResponseMessage response = await _httpClient.GetAsync(imageUrl);
                 response.EnsureSuccessStatusCode();
 

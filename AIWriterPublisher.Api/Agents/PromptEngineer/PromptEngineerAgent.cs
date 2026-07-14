@@ -192,14 +192,9 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             // string apiKey = _configuration["AiServices:OpenRouter:ApiKey"] ?? throw new InvalidOperationException("OpenRouter ApiKey не настроен!");
             // string modelName = _configuration["AiServices:OpenRouter:PrimaryModel"] ?? "openai/gpt-oss-120b:free";
             string baseUrl = _configuration["AIServices:Groq:BaseUrl"] ?? "https://api.groq.com/openai/v1/";
-            string apiKey = _configuration["AIServices:Groq:ApiKey"] ?? "";
+            string apiKey = _configuration["AIServices:Groq:ApiKey"] ?? string.Empty;
             string modelName = _configuration["AIServices:Groq:Model"] ?? "llama-3.3-70b-versatile";
-            string cleanApiKey = apiKey?.Trim() ?? "";
-            // _httpClient.DefaultRequestHeaders.Remove("Authorization");
-            // _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey.Trim()}");
-
-            // var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
-            // requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            string cleanApiKey = apiKey.Trim();
 
             var retryPolicy = Policy
                 .Handle<HttpRequestException>()
@@ -223,7 +218,6 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             };
 
             string jsonPayload = JsonSerializer.Serialize(requestBody);
-            // requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
             try
             {
@@ -246,7 +240,7 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
                     // СОЗДАЕМ НОВЫЙ запрос для fallback
                     var fallbackRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
                     _httpClient.DefaultRequestHeaders.Remove("Authorization");
-                    _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey.Trim()}");
+                    _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {cleanApiKey}");
                     
                     var fallbackBody = new
                     {
@@ -298,7 +292,6 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
                         
                         // Десериализуем именно как Список!
                         var engineeredSpec = JsonSerializer.Deserialize<EngineeringSpecDto>(parsedRoot.GetRawText(), options);
-                        Console.WriteLine($"[PromptEngineer Success] Сгенерирован промпт: {engineeredSpec}");
                         
                         return engineeredSpec ?? new EngineeringSpecDto
                         {

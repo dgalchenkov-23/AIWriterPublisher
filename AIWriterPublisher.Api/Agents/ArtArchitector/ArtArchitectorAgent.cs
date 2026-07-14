@@ -297,8 +297,6 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
 
             systemPrompt += "\n\n" + modelPrompt; // Добавляем специфические правила для выбранной модели в системный промпт
 
-            Console.WriteLine($"[ArtArchitector] Полученный от пользователя сырой поток: {rawPrompt}");
-
             // Если модель — локальная Ollama, используем её специфический эндпоинт и формат промпта
             if (analysisModel == "ollama-qwen-2-7b")
             {
@@ -319,7 +317,6 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                 // string modelName = _configuration["AIServices:Groq:Model"] ?? "openai/gpt-oss-120b";
                 string cleanApiKey = apiKey?.Trim() ?? "";
 
-                // Безопасно настраиваем авторизацию в HttpClient
                 _httpClient.DefaultRequestHeaders.Remove("Authorization");
 
                 var retryPolicy = Policy
@@ -331,12 +328,6 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                         Console.WriteLine($"[ArtArchitector Warning] OpenRouter словил 429. Попытка {retryCount}, ждем {timeSpan.TotalSeconds} сек...");
                     });
 
-                Console.WriteLine($"[ArtArchitector Debug] Ключ получен из конфига? {(!string.IsNullOrEmpty(cleanApiKey) ? $"ДА, длина {cleanApiKey.Length} симв." : "НЕТ, ОН ПУСТОЙ")}");
-                
-                // var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
-                
-                // requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cleanApiKey);
-                // Console.WriteLine($"[ArtArchitector Send] Auth Header: {requestMessage.Headers.Authorization}");
                 // Формируем классический payload для OpenAI-совместимого эндпоинта
                 var requestBody = new
                 {
@@ -351,10 +342,6 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                 };
 
                 string jsonPayload = JsonSerializer.Serialize(requestBody);
-                // requestMessage.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                // Console.WriteLine($"[ArtArchitector] Отправка Магического потока на разбор в модель {modelName}...");
-                // Console.WriteLine($"[ArtArchitector Send] Auth Header: {requestMessage.Headers.Authorization}");
                 HttpResponseMessage httpResponse = await retryPolicy.ExecuteAsync(async () => 
                 {
                     var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
@@ -405,18 +392,13 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                 
                 using var doc = JsonDocument.Parse(responseString);
                 var root = doc.RootElement;
-                Console.WriteLine($"[ArtArchitector Success] {root}");
                 if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
                 {
                     string? rawJsonText = choices[0].GetProperty("message").GetProperty("content").GetString();
-                    Console.WriteLine($"[ArtArchitector Success] получен ответ от модели.");
                     if (!string.IsNullOrEmpty(rawJsonText))
                     {
                         // Очистка от markdown-тегов ```json ... ```                        
                         rawJsonText = rawJsonText.Replace("```json", "").Replace("```", "").Replace("json", "").Trim();
-                        
-                        Console.WriteLine($"[ArtArchitector Success] Получен JSON от модели.");
-                        Console.WriteLine($"[ArtArchitector Success] Raw JSON:\r\n {rawJsonText}\r\n");
 
                         // Безопасно парсим полученный JSON во внутренний DTO
                         using var parsedDoc = JsonDocument.Parse(rawJsonText);
@@ -444,7 +426,7 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
             }
         }
 
-        private async Task<TechnicalSpecDto> CallFreeOpenRouterAsync(string systemPrompt, string userPrompt)
+        private Task<TechnicalSpecDto> CallFreeOpenRouterAsync(string systemPrompt, string userPrompt)
         {
             string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
             string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
@@ -464,9 +446,8 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
                 max_tokens = 10000, // Максимальное количество слов в ответе
             };
 
-            // Безопасно настраиваем авторизацию в HttpClient
             _httpClient.DefaultRequestHeaders.Remove("Authorization");
-            return new TechnicalSpecDto();
+            return Task.FromResult(new TechnicalSpecDto());
         }
     
         private async Task<TechnicalSpecDto> CallOllamaAsync(string systemPrompt, string userPrompt)

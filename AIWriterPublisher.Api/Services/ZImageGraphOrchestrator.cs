@@ -109,15 +109,6 @@ public class ZImageGraphOrchestrator
 
     private KSamplerSettings GetSamplerSettings(List<LoraConfig> loras)
     {
-        // Вернул заглушечный return, мы тестируем эту комбу!
-        return new KSamplerSettings
-        {
-            Steps = 18, // Поднял с 14 до стабильных 18 под наш сетап
-            Cfg = 1.0f,
-            SamplerName = "euler",
-            Scheduler = "simple"
-        };
-        
         bool hasAesthetic = loras.Any(l => l.FileName.Contains("Z-Image-Aesthetic"));
         bool hasRealistic = loras.Any(l => l.FileName.Contains("RealisticSnapshot") || l.FileName.Contains("ZIMAGE-CCD") || l.FileName.Contains("Jibs_Realistic"));
         bool hasBetterImages = loras.Any(l => l.FileName.Contains("better_images_loraholic"));
