@@ -83,3 +83,5 @@ C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\SDXL_Txt2Img.json
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\lora_manifest_old.json
 C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\ZIT_Heretic.json
+C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\lora_portrait_manifest.json
+C:\Users\Gall\Documents\_WORK\AIWriterPublisher\AIWriterPublisher.API\bin\Debug\net9.0\ZIT_Heretic_HeroFace.json

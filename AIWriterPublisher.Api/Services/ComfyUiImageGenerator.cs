@@ -534,7 +534,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
             // 1. Динамически выбираем шаблон графа в зависимости от наличия FaceSwap
             bool isFaceSwapRequired = !string.IsNullOrEmpty(faceReferenceUrl);
-            string workflowFileName = isFaceSwapRequired ? "ZIT_Hero_FaceSwap.json" : "ZIT_Heretic.json";
+            string workflowFileName = isFaceSwapRequired ? "ZIT_Hero_FaceSwap.json" : "ZIT_Heretic_HeroFace.json";
             string workflowPath = Path.Combine(AppContext.BaseDirectory, workflowFileName);
 
             if (!File.Exists(workflowPath))
@@ -559,14 +559,27 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
             string rawManifestJson = File.Exists(manifestPath) 
                 ? await File.ReadAllTextAsync(manifestPath, ct) 
                 : string.Empty;
+            string loraGraph = string.Empty;
 
+            if( !isFaceSwapRequired )
+            {
+                _logger.LogInformation("[ComfyUI] FaceSwap не требуется. Используем стандартный граф без LoRA.");
+                loraGraph = workflowJson; // Если FaceSwap не нужен, используем граф без LoRA
+            }
+            else
+            {
+                _logger.LogInformation("[ComfyUI] FaceSwap требуется. Инжектим цепочку LoRA в граф.");
+                loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject, rawManifestJson, _zImageOrchestrator);
+            }
             // Врезаем цепочку Лорок в граф
-            string loraGraph = ComfyUiGraphOrchestrator.InjectLoraChainIntoGraph(workflowJson, lorasToInject, rawManifestJson, _zImageOrchestrator);
 
             var graph = JsonNode.Parse(loraGraph)?.AsObject();
             if (graph == null) throw new InvalidOperationException("Не удалось распарсить итоговый JSON графа.");
 
-            // 3. Подставляем промпты в стандартные ноды
+            // 3. Генерируем случайный seed для KSampler (Нода "6") для разнообразия генераций
+            long newSeed = Random.Shared.NextInt64(1, 999999999999999);
+            graph["6"]["inputs"]["seed"] = newSeed;
+            // 4. Подставляем промпты в стандартные ноды
             // Нода 5: Positive Prompt
             string positiveNodeId = "5";
             if (graph.TryGetPropertyValue(positiveNodeId, out var posNode) && posNode?["inputs"] is JsonObject posInputs)
@@ -574,14 +587,14 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
                 posInputs["text"] = finalPrompt;
             }
 
-            // Нода 4: Negative Prompt (для Flux можно оставлять пустым или зашивать дефолт)
+            // Нода 5: Negative Prompt (для Flux можно оставлять пустым или зашивать дефолт)
             string negativeNodeId = "4";
             if (graph.TryGetPropertyValue(negativeNodeId, out var negNode) && negNode?["inputs"] is JsonObject negInputs)
             {
                 negInputs["text"] = "bad anatomy, blurry, low quality, deformed, extra limbs";
             }
 
-            // 4. Если нужен FaceSwap — настраиваем ноду ReActor / IP-Adapter
+            // 6. Если нужен FaceSwap — настраиваем ноду ReActor / IP-Adapter
             if (isFaceSwapRequired)
             {
                 // Предположим, нода FaceSwap в твоем графе ZIT_Hero_FaceSwap.json имеет ID "10"
@@ -601,8 +614,10 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
             ct.ThrowIfCancellationRequested();
 
-            // 5. Проверяем здоровье ComfyUI и отправляем запрос
+            // 7. Проверяем здоровье ComfyUI и отправляем запрос
             await CheckComfyUiHealthAsync();
+
+            Console.WriteLine($"[ComfyUI] Полный граф для инференса персонажа: {graph.ToString()}");
 
             var requestBody = new JsonObject { ["prompt"] = graph };
             
@@ -622,7 +637,7 @@ public sealed class ComfyUiImageGenerator : IImageGenerator
 
             _logger.LogInformation("[ComfyUI] Запрос успешно поставлен в очередь. PromptId: {PromptId}", queueResult.PromptId);
             
-            // 6. Уходим в поллинг ожидания генерации файла (передаем токен отмены внутрь)
+            // 8. Уходим в поллинг ожидания генерации файла (передаем токен отмены внутрь)
             var generationResult = await PollAndGetResultAsync(queueResult.PromptId, ct);
 
             return generationResult.Base64;

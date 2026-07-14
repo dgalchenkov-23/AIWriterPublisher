@@ -16,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Стандартные сервисы Web API
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddMemoryCache();
 
 // 2. Извлекаем API-ключ Gemini из User Secrets
 string geminiApiKey = builder.Configuration["Gemini:ApiKey"] 

@@ -20,10 +20,12 @@ namespace AIWriterPublisher.Api.Agents.ArtDirector
 
         public async Task<List<ArtConcept>> BrainstormConceptsAsync(string genre, string description)
         {
-            string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
-            string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
-            string modelName = _configuration["AIServices:OpenRouter:Model"] ?? "openai/gpt-oss-120b:free";
-
+            // string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
+            // string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
+            // string modelName = _configuration["AIServices:OpenRouter:Model"] ?? "openai/gpt-oss-120b:free";
+            string baseUrl = _configuration["AIServices:Groq:BaseUrl"] ?? "https://api.groq.com/openai/v1/";
+            string apiKey = _configuration["AIServices:Groq:ApiKey"] ?? "";
+            string modelName = _configuration["AIServices:Groq:Model"] ?? "openai/gpt-oss-120b";
             string cleanApiKey = apiKey?.Trim() ?? "";
 
             // Безопасно настраиваем авторизацию в HttpClient

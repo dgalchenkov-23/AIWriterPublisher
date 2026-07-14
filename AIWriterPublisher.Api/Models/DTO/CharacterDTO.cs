@@ -18,6 +18,8 @@ namespace AIWriterPublisher.Api.Models.DTO
         public string Model { get; set; } = "ComfyUI"; // Модель генерации (по умолчанию ComfyUI)
         [JsonPropertyName("AnalysisModel")]
         public string AnalysisModel { get; set; } = "gpt-oss:120b"; // Модель анализа (по умолчанию Realistic)
+        [JsonPropertyName("SessionId")]
+        public string? SessionId { get; set; }
     }
 
     // 2. Ответ от бэкенда

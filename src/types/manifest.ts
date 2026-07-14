@@ -62,6 +62,15 @@ export interface GeneratedCover {
   technical_prompt_used?: string;
 }
 
+export interface GeneratedFace {
+  face_id: string;
+  url: string;
+  timestamp: string;
+  comfy_prompt: string;       // Сюда маппим result.generatedPrompt от бэка
+  user_description: string;   // Сюда маппим исходный payload.UserDescription
+  agent_review: string;       // Сюда маппим отзыв Миры (result.agentReview)
+}
+
 export interface ProjectManifest {
   project_id: string;
   user_id: string;

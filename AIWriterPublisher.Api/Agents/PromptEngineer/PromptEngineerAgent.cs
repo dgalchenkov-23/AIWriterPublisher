@@ -188,10 +188,12 @@ namespace AIWriterPublisher.Api.Agents.PromptEngineer
             }
 
             // Читаем из актуальной безопасной иерархии конфигурации
-            string baseUrl = _configuration["AiServices:OpenRouter:BaseUrl"] ?? "[https://openrouter.ai/api/v1](https://openrouter.ai/api/v1)";
-            string apiKey = _configuration["AiServices:OpenRouter:ApiKey"] ?? throw new InvalidOperationException("OpenRouter ApiKey не настроен!");
-            string modelName = _configuration["AiServices:OpenRouter:PrimaryModel"] ?? "openai/gpt-oss-120b:free";
-
+            // string baseUrl = _configuration["AiServices:OpenRouter:BaseUrl"] ?? "[https://openrouter.ai/api/v1](https://openrouter.ai/api/v1)";
+            // string apiKey = _configuration["AiServices:OpenRouter:ApiKey"] ?? throw new InvalidOperationException("OpenRouter ApiKey не настроен!");
+            // string modelName = _configuration["AiServices:OpenRouter:PrimaryModel"] ?? "openai/gpt-oss-120b:free";
+            string baseUrl = _configuration["AIServices:Groq:BaseUrl"] ?? "https://api.groq.com/openai/v1/";
+            string apiKey = _configuration["AIServices:Groq:ApiKey"] ?? "";
+            string modelName = _configuration["AIServices:Groq:Model"] ?? "llama-3.3-70b-versatile";
             string cleanApiKey = apiKey?.Trim() ?? "";
             // _httpClient.DefaultRequestHeaders.Remove("Authorization");
             // _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey.Trim()}");

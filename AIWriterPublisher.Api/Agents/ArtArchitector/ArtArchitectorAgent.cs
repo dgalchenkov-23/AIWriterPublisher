@@ -307,10 +307,16 @@ namespace AIWriterPublisher.Api.Agents.ArtArchitector
 
             try
             {
-                string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
-                string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
-                string modelName = _configuration["AIServices:OpenRouter:Model"] ?? "openai/gpt-oss-120b:free";
-
+                // string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
+                // string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
+                // string modelName = _configuration["AIServices:OpenRouter:Model"] ?? "openai/gpt-oss-120b:free";
+                
+                string baseUrl = _configuration["AIServices:Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent";
+                string apiKey = _configuration["AIServices:Gemini:ApiKey"] ?? "";
+                string modelName = _configuration["AIServices:Gemini:Model"] ?? "gemini-3.1-flash-lite";
+                // string baseUrl = _configuration["AIServices:Groq:BaseUrl"] ?? "https://api.groq.com/openai/v1/";
+                // string apiKey = _configuration["AIServices:Groq:ApiKey"] ?? "";
+                // string modelName = _configuration["AIServices:Groq:Model"] ?? "openai/gpt-oss-120b";
                 string cleanApiKey = apiKey?.Trim() ?? "";
 
                 // Безопасно настраиваем авторизацию в HttpClient

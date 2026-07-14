@@ -14,42 +14,47 @@ public class ZImageGraphOrchestrator
 
     public OptimizedGraphResult OptimizeGraph(List<LoraConfig> selectedLoras)
     {
-        // 1. Убираем конфликты (прямо в переданной коллекции)
-        RemoveConflicts(selectedLoras);
+        // Делаем глубокую/поверхностную копию, чтобы не срать в исходную коллекцию бизнес-логики
+        var lorasPipeline = selectedLoras.Select(l => new LoraConfig 
+        { 
+            DisplayName = l.DisplayName,
+            FileName = l.FileName,
+            StrengthModel = l.StrengthModel,
+            StrengthClip = l.StrengthClip,
+            TriggerWords = l.TriggerWords
+        }).ToList();
 
-        // 2. Нормализуем веса (прямо в переданной коллекции)
-        NormalizeWeights(selectedLoras);
+        // 1. Убираем конфликты
+        RemoveConflicts(lorasPipeline);
 
-        // 3. Выбираем настройки на основе финального стека
-        var samplerSettings = GetSamplerSettings(selectedLoras);
+        // 2. Нормализуем веса
+        NormalizeWeights(lorasPipeline);
 
-        // 4. Возвращаем результат (контракт НЕ МЕНЯЕТСЯ)
+        // 3. Теперь правила сэмплера отработают корректно на чистом стеке
+        var samplerSettings = GetSamplerSettings(lorasPipeline);
+    Console.WriteLine($"lorasPipeline: {string.Join(", ", lorasPipeline.Select(l => $"{l.FileName} (weight: {l.StrengthModel})"))}");
         return new OptimizedGraphResult
         {
             SamplerSettings = samplerSettings,
-            PatchedLoras = selectedLoras
+            PatchedLoras = lorasPipeline
         };
     }
 
-    // --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ---
-
     private void RemoveConflicts(List<LoraConfig> loras)
     {
-        bool hasAesthetic = loras.Any(l => l.FileName == AESTHETIC_BASE);
-        bool hasBetterImages = loras.Any(l => l.FileName == BETTER_IMAGES);
-        bool hasCcd = loras.Any(l => l.FileName == CCD_REALISTIC);
-        bool hasSnapshot = loras.Any(l => l.FileName == REALISTIC_SNAPSHOT);
+        bool hasAesthetic = loras.Any(l => l.FileName.Contains("Z-Image-Aesthetic"));
+        bool hasBetterImages = loras.Any(l => l.FileName.Contains("better_images_loraholic"));
+        bool hasCcd = loras.Any(l => l.FileName.Contains("ZIMAGE-CCD"));
+        bool hasSnapshot = loras.Any(l => l.FileName.Contains("RealisticSnapshot"));
 
-        // Если есть Aesthetic, убираем Better Images (конфликт)
         if (hasAesthetic && hasBetterImages)
         {
-            loras.RemoveAll(l => l.FileName == BETTER_IMAGES);
+            loras.RemoveAll(l => l.FileName.Contains("better_images_loraholic"));
         }
 
-        // Если есть CCD и Snapshot вместе — оставляем только Snapshot
         if (hasCcd && hasSnapshot)
         {
-            loras.RemoveAll(l => l.FileName == CCD_REALISTIC);
+            loras.RemoveAll(l => l.FileName.Contains("ZIMAGE-CCD"));
         }
     }
 
@@ -57,41 +62,40 @@ public class ZImageGraphOrchestrator
     {
         foreach (var lora in loras)
         {
-            float maxWeight = GetMaxWeight(lora.FileName);
-            float safeWeight = GetSafeWeight(lora.FileName); // НОВОЕ!
+            float? maxWeight = GetMaxWeight(lora.FileName);
+            float? safeWeight = GetSafeWeight(lora.FileName);
 
-            // Если вес превышает безопасный — обрезаем до безопасного
-            if (lora.StrengthModel > safeWeight)
+            // Если модель неизвестна бэкенду — НЕ ТРОГАЕМ её вес, доверяем агенту!
+            // Но если лимиты определены — жестко их соблюдаем.
+            if (safeWeight.HasValue && lora.StrengthModel > safeWeight.Value)
             {
-                lora.StrengthModel = safeWeight;
-                lora.StrengthClip = safeWeight;
+                lora.StrengthModel = safeWeight.Value;
+                lora.StrengthClip = safeWeight.Value;
             }
 
-            // Если вес всё ещё превышает абсолютный потолок — обрезаем до потолка
-            if (lora.StrengthModel > maxWeight)
+            if (maxWeight.HasValue && lora.StrengthModel > maxWeight.Value)
             {
-                lora.StrengthModel = maxWeight;
-                lora.StrengthClip = maxWeight;
+                lora.StrengthModel = maxWeight.Value;
+                lora.StrengthClip = maxWeight.Value;
             }
         }
     }
 
-    private float GetSafeWeight(string fileName)
+    private float? GetSafeWeight(string fileName)
     {
-        // БЕЗОПАСНЫЕ РАБОЧИЕ ВЕСА (не потолок!)
-        if (fileName.Contains("better_images_loraholic")) return 4.0f;  // рабочий диапазон 2-5
-        if (fileName.Contains("detail_slider_Z_V2")) return 1.5f;      // рабочий диапазон 0.5-1.5
-        if (fileName.Contains("skindetails_mild_loraholic")) return 3.0f; // рабочий диапазон 1-4
-        if (fileName.Contains("midj-z-1")) return 0.8f;                // рабочий диапазон 0.5-0.8
-        if (fileName.Contains("RealisticSnapshot")) return 0.7f;       // рабочий диапазон 0.5-0.7
-        if (fileName.Contains("Z-Image-Aesthetic")) return 1.0f;       // строго 1.0
-        if (fileName.Contains("distillpatch")) return 1.0f;            // строго 1.0
-        return 5.0f; // дефолт для остальных
+        if (fileName.Contains("better_images_loraholic")) return 4.0f;  
+        if (fileName.Contains("detail_slider_Z_V2")) return 1.5f;      
+        if (fileName.Contains("skindetails_mild_loraholic")) return 3.0f; 
+        if (fileName.Contains("midj-z-1")) return 0.8f;                
+        if (fileName.Contains("RealisticSnapshot")) return 0.7f;       
+        if (fileName.Contains("Z-Image-Aesthetic")) return 1.0f;       
+        if (fileName.Contains("distillpatch")) return 1.0f;   
+        
+        return null; // Для новых LoRA возвращаем null, чтобы использовать вес от ИИ-агента
     }
 
-    private float GetMaxWeight(string fileName)
+    private float? GetMaxWeight(string fileName)
     {
-        // АБСОЛЮТНЫЙ ПОТОЛОК (за который нельзя заходить НИКОГДА)
         if (fileName.Contains("better_images_loraholic")) return 9.0f;
         if (fileName.Contains("detail_slider_Z_V2")) return 2.0f;
         if (fileName.Contains("skindetails_mild_loraholic")) return 8.0f;
@@ -99,14 +103,24 @@ public class ZImageGraphOrchestrator
         if (fileName.Contains("RealisticSnapshot")) return 1.0f;
         if (fileName.Contains("Z-Image-Aesthetic")) return 1.2f;
         if (fileName.Contains("distillpatch")) return 1.0f;
-        return 9.0f;
+        
+        return null; 
     }
 
     private KSamplerSettings GetSamplerSettings(List<LoraConfig> loras)
     {
-        bool hasAesthetic = loras.Any(l => l.FileName == AESTHETIC_BASE);
-        bool hasRealistic = loras.Any(l => l.FileName == REALISTIC_SNAPSHOT || l.FileName == CCD_REALISTIC);
-        bool hasBetterImages = loras.Any(l => l.FileName == BETTER_IMAGES);
+        // Вернул заглушечный return, мы тестируем эту комбу!
+        return new KSamplerSettings
+        {
+            Steps = 18, // Поднял с 14 до стабильных 18 под наш сетап
+            Cfg = 1.0f,
+            SamplerName = "euler",
+            Scheduler = "simple"
+        };
+        
+        bool hasAesthetic = loras.Any(l => l.FileName.Contains("Z-Image-Aesthetic"));
+        bool hasRealistic = loras.Any(l => l.FileName.Contains("RealisticSnapshot") || l.FileName.Contains("ZIMAGE-CCD") || l.FileName.Contains("Jibs_Realistic"));
+        bool hasBetterImages = loras.Any(l => l.FileName.Contains("better_images_loraholic"));
 
         // ПРАВИЛО 1: Aesthetic без реалистичных → heunpp2
         if (hasAesthetic && !hasRealistic)
@@ -120,12 +134,12 @@ public class ZImageGraphOrchestrator
             };
         }
 
-        // ПРАВИЛО 2: Реалистичные без Aesthetic → euler
+        // ПРАВИЛО 2: Реалистичные без Aesthetic → euler (Наш текущий случай)
         if (hasRealistic && !hasAesthetic)
         {
             return new KSamplerSettings
             {
-                Steps = 14,
+                Steps = 18, // Поднял с 14 до стабильных 18 под наш сетап
                 Cfg = 1.0f,
                 SamplerName = "euler",
                 Scheduler = "simple"
@@ -144,7 +158,7 @@ public class ZImageGraphOrchestrator
             };
         }
 
-        // ПРАВИЛО 4: Better Images и ничего больше → euler
+        // ПРАВИЛО 4: Better Images и ничего больше
         if (hasBetterImages)
         {
             return new KSamplerSettings
@@ -165,5 +179,4 @@ public class ZImageGraphOrchestrator
             Scheduler = "simple"
         };
     }
-
 }

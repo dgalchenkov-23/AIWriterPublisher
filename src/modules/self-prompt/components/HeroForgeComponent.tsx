@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import type { GeneratedCover } from '../../../types/manifest';
+import type { GeneratedCover, GeneratedFace, RenderSettings, TechnicalSpec } from '../../../types/manifest';
 import { heroGenerate } from '../api/heroGenerate';
 
 interface HeroForgeProps {
   selfPrompt: any;
-  onAddGeneration: (cover: GeneratedCover) => void;
+  technicalSpec?: TechnicalSpec;
+  renderSettings?: RenderSettings;
+  onAddGeneration: (item: GeneratedFace) => void;
 }
 
 const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGeneration }) => {
-  const [faceGallery, setFaceGallery] = useState<GeneratedCover[]>([]);
+  const [faceGallery, setFaceGallery] = useState<GeneratedFace[]>([]);
   const [bodyGallery, setBodyGallery] = useState<GeneratedCover[]>([]);
-  const [selectedFaceUrl, setSelectedFaceUrl] = useState<string | null>(null);
+  const [selectedFace, setSelectedFace] = useState<GeneratedFace | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [generatingFace, setGeneratingFace] = useState(false);
   const [generatingBody, setGeneratingBody] = useState(false);
@@ -40,16 +42,18 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
       };
 
       const result: any = await heroGenerate(payload as any);
-      const newCover: GeneratedCover = {
-        art_id: crypto.randomUUID(),
+      const newFace: GeneratedFace = {
+        face_id: crypto.randomUUID(),
         url: result.imageUrl,
         timestamp: new Date().toISOString(),
-        technical_prompt_used: payload.UserDescription,
+        comfy_prompt: result.generatedPrompt ?? '',
+        user_description: payload.UserDescription,
+        agent_review: result.agentReview ?? '',
       };
 
-      setFaceGallery((prev) => [newCover, ...prev]);
-      setMiraLog('Новый лик добавлен в галерею. Выбери его для следующего шага.');
-      onAddGeneration(newCover);
+      setFaceGallery((prev) => [newFace, ...prev]);
+      setMiraLog(newFace.agent_review || 'Новый лик добавлен в галерею. Выбери его для следующего шага.');
+      onAddGeneration(newFace);
     } catch (error) {
       console.error(error);
       setMiraLog('Не удалось создать лицо. Проверь запрос и попробуй снова.');
@@ -58,8 +62,8 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
     }
   };
 
-  const handleSelectFace = (url: string) => {
-    setSelectedFaceUrl(url);
+  const handleSelectFace = (face: GeneratedFace) => {
+    setSelectedFace(face);
     setLightboxImage(null);
     setKaraLog('Выбранный лик активирован. Кара готова к FaceSwap.');
 
@@ -70,7 +74,7 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
   };
 
   const generateFullBody = async () => {
-    if (generatingBody || !selectedFaceUrl || !promptText.trim()) return;
+    if (generatingBody || !selectedFace?.url || !promptText.trim()) return;
     setGeneratingBody(true);
     setKaraLog('Кара настраивает кадр и переносит лицо в полный рост.');
 
@@ -78,7 +82,7 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
       const payload = {
         UserDescription: promptText,
         IsFullBody: true,
-        FaceReferenceUrl: selectedFaceUrl,
+        FaceReferenceUrl: selectedFace?.url ?? null,
       };
 
       const result: any = await heroGenerate(payload as any);
@@ -91,7 +95,6 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
 
       setBodyGallery((prev) => [newCover, ...prev]);
       setKaraLog('Ростовой снимок готов. Он добавлен в нижнюю ленту.');
-      onAddGeneration(newCover);
     } catch (error) {
       console.error(error);
       setKaraLog('Ошибка генерации. Попробуй скорректировать prompt или выбрать другое лицо.');
@@ -100,8 +103,10 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
     }
   };
 
-  const lightboxIsFace = lightboxImage ? faceGallery.some((cover) => cover.url === lightboxImage) : false;
+  const lightboxIsFace = lightboxImage ? faceGallery.some((face) => face.url === lightboxImage) : false;
   const lightboxIsBody = lightboxImage ? bodyGallery.some((cover) => cover.url === lightboxImage) : false;
+  const lightboxFace = lightboxImage ? faceGallery.find((face) => face.url === lightboxImage) ?? null : null;
+  const selectedFaceUrl = selectedFace?.url ?? null;
 
   return (
       <div className="hero-forge-layout w-full flex flex-col gap-8 p-6 bg-slate-950/90 border border-slate-800/80 rounded-[32px] text-slate-100 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.85)]">
@@ -150,7 +155,7 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
                     const isActive = selectedFaceUrl === face.url;
                     return (
                       <button
-                        key={face.art_id}
+                        key={face.face_id}
                         type="button"
                         onClick={() => setLightboxImage(face.url)}
                         className={`group relative aspect-[4/3] overflow-hidden rounded-2xl border transition duration-200 ${
@@ -287,10 +292,10 @@ const HeroForgeComponent: React.FC<HeroForgeProps> = ({ selfPrompt, onAddGenerat
               >
                 Закрыть
               </button>
-              {lightboxIsFace && !lightboxIsBody && (
+              {lightboxIsFace && !lightboxIsBody && lightboxFace && (
                 <button
                   type="button"
-                  onClick={() => handleSelectFace(lightboxImage)}
+                  onClick={() => handleSelectFace(lightboxFace)}
                   className="w-full sm:w-auto rounded-2xl border border-indigo-500/30 bg-indigo-600/10 px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-100 transition-all duration-200 hover:border-indigo-400/60 hover:bg-indigo-600/20"
                 >
                   Выбрать этот лик для фото

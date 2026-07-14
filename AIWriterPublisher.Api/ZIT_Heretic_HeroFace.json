@@ -57,7 +57,7 @@
   },
   "5": {
     "inputs": {
-      "text": "Обложка. Высокий, элегантный блондинистый эльф в серебристых доспехах с мечом в руках стоит на колене возле трона. На троне сидит невысокая молодая женщина с бледной кожей, черными волосами и глазами. Ее черное платье с тугим корсетом и пышными юбками подчеркивает ее осанку. Прическа \"помпадур\" с двумя волнами локонов держит тонкую изящную корону. Фоном служит тронный зал, затянутый  черными розами.",
+      "text": "(close-up portrait:1.2), upper body portrait of a defiant woman bathed in night alley shadows, looking directly into the camera, sharp angular facial features with high cheekbones and a stubborn chin, pale skin glistening with moisture as if drenched by nocturnal humidity, subtle pink neon rim lighting highlighting the contours of her face, dark penetrating eyes with a slight squint, tightly pressed lips hinting at a barely visible mischievous smirk at the corner, short disheveled dark hair with a few strands falling over the forehead, gritty film grain, realistic weathered skin texture with visible pores and faint sheen, dramatic chiaroscuro lighting, blurred neon‑pink signage reflections in the background, cinematic moody lighting, harsh cyberpunk neon glow, atmospheric night‑time alley ambience",
       "clip": [
         "8",
         1
@@ -70,9 +70,9 @@
   },
   "6": {
     "inputs": {
-      "seed": 537580774849261,
+      "seed": 636660149307538,
       "steps": 18,
-      "cfg": 1.0,
+      "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
       "denoise": 1,
@@ -119,6 +119,26 @@
       "PowerLoraLoaderHeaderWidget": {
         "type": "PowerLoraLoaderHeaderWidget"
       },
+      "lora_1": {
+        "on": true,
+        "lora": "z-image_turbo_distillpatch_comfyui.safetensors",
+        "strength": 1
+      },
+      "lora_2": {
+        "on": true,
+        "lora": "Z-Image-Aesthetic_v1.safetensors",
+        "strength": 1
+      },
+      "lora_3": {
+        "on": true,
+        "lora": "JIBS_ZIT_Midjourney_V2_lora_Epoch5.safetensors",
+        "strength": 0.5
+      },
+      "lora_4": {
+        "on": false,
+        "lora": "EyeDetail_Z_Turbo.safetensors",
+        "strength": 0.4
+      },
       "➕ Add Lora": "",
       "model": [
         "10",
@@ -134,25 +154,11 @@
       "title": "Power Lora Loader (rgthree)"
     }
   },
-  "9": {
-    "inputs": {
-      "sage_attention": "disabled",
-      "allow_compile": false,
-      "model": [
-        "11",
-        0
-      ]
-    },
-    "class_type": "PathchSageAttentionKJ",
-    "_meta": {
-      "title": "Patch Sage Attention KJ"
-    }
-  },
   "10": {
     "inputs": {
       "shift": 3,
       "model": [
-        "9",
+        "11",
         0
       ]
     },
@@ -181,6 +187,15 @@
     }
   },
   "14": {
+    "inputs": {
+      "vae_name": "zImageTurbo_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Загрузить VAE"
+    }
+  },
+  "16": {
     "inputs": {
       "vae_name": "zImageTurbo_vae.safetensors"
     },

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
 using AIWriterPublisher.Api.Models.DTO;
 using AIWriterPublisher.Api.Services;
@@ -12,6 +13,7 @@ using AIWriterPublisher.Api.Agents.HeroFaceAgent;
 using AIWriterPublisher.Api.Agents.HeroCharAgent;
 using AIWriterPublisher.Api.Agents.LoraAgent;
 using AIWriterPublisher.Api.Models;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AIWriterPublisher.Api.Services
 {
@@ -21,18 +23,24 @@ namespace AIWriterPublisher.Api.Services
         private readonly HeroCharAgent _charAgent;
         private readonly HeroPortraitLoraAgent _loraAgent;
         private readonly ComfyUiImageGenerator _comfyGenerator; 
+        private readonly IMemoryCache _memoryCache;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly List<LoraDefinition> _allPortraitLoras;
 
         public HeroCharacterOrchestrator(
             HeroFaceAgent faceAgent,
             HeroCharAgent charAgent,
             HeroPortraitLoraAgent loraAgent,
-            ComfyUiImageGenerator comfyGenerator)
+            ComfyUiImageGenerator comfyGenerator,
+            IMemoryCache memoryCache,
+            IHttpContextAccessor httpContextAccessor)
         {
             _faceAgent = faceAgent;
             _charAgent = charAgent;
             _loraAgent = loraAgent;
-            _comfyGenerator = comfyGenerator;            
+            _comfyGenerator = comfyGenerator;
+            _memoryCache = memoryCache;
+            _httpContextAccessor = httpContextAccessor;            
 
             string path = Path.Combine(AppContext.BaseDirectory, "lora_portrait_manifest.json");
             if (File.Exists(path))
@@ -56,9 +64,12 @@ namespace AIWriterPublisher.Api.Services
         {
             // 1. Фильтруем Лоры на уровне C#, чтобы не забивать контекст ИИ
             var filteredLoras = _allPortraitLoras.Where(l => 
-                l.Category == "Enhancer" || 
-                (isFullBody && (l.Category == "Clothing" || l.Category == "Environment" || l.Category == "Pose")) ||
-                (!isFullBody && (l.Category == "Portrait" || l.Category == "FaceDetail"))
+                l.Category == "Base_Enhancer" || 
+                l.Category == "Character_Refinement" ||
+                l.Category == "Art_Style_2D" ||
+                l.Category == "Technical" ||
+                l.Category == "Technical_Slider" ||
+                (isFullBody && (l.Category == "Background_Scenery" || l.Category == "Atmosphere_Lighting"))
             ).ToList();
 
             // 2. Мапим во встроенные облегченные DTO для ИИ
@@ -78,7 +89,6 @@ namespace AIWriterPublisher.Api.Services
             // 3. Запрашиваем у агента Лары выбор моделей и расчет весов под наш промпт
             // Передаем правильные аргументы, которые ожидает _loraAgent
             List<LoraPreset> selectedByAi = await _loraAgent.PredictPortraitLorasAsync(technicalPrompt, lorasForAgent, cancellationToken);
-
             // 4. Обогащаем выбор ИИ триггер-вордами из нашего мастер-манифеста
             foreach (var selected in selectedByAi)
             {
@@ -98,6 +108,7 @@ namespace AIWriterPublisher.Api.Services
         {
             CharacterGenerationResponse character = new CharacterGenerationResponse();
             string agentReview = string.Empty;
+            var predictedLoras = new List<LoraPreset>();
 
             // =================================================================
             // ШАГ 1: Получаем чистый английский промпт от специализированного агента
@@ -105,7 +116,30 @@ namespace AIWriterPublisher.Api.Services
             if (!request.IsFullBody)
             {
                 // Цепочка Миры (Лицо)
-                character = await _faceAgent.GenerateFacePromptAsync(request.UserDescription, cancellationToken);
+                var cacheKey = BuildFacePromptCacheKey(request);
+                if (_memoryCache.TryGetValue(cacheKey, out CharacterGenerationResponse? cachedFaceResponse) && cachedFaceResponse != null)
+                {
+                    character = new CharacterGenerationResponse
+                    {
+                        GeneratedPrompt = cachedFaceResponse.GeneratedPrompt,
+                        AgentReview = cachedFaceResponse.AgentReview,
+                        ImageUrl = cachedFaceResponse.ImageUrl
+                    };
+                }
+                else
+                {
+                    character = await _faceAgent.GenerateFacePromptAsync(request.UserDescription, cancellationToken);
+                    _memoryCache.Set(cacheKey, new CharacterGenerationResponse
+                    {
+                        GeneratedPrompt = character.GeneratedPrompt,
+                        AgentReview = character.AgentReview,
+                        ImageUrl = character.ImageUrl
+                    }, new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(12)
+                    });
+                }
+
                 agentReview = character.AgentReview;
             }
             else
@@ -113,6 +147,12 @@ namespace AIWriterPublisher.Api.Services
                 // Цепочка Кары (Полный рост)
                 character = await _charAgent.GenerateCharPromptAsync(request.UserDescription, cancellationToken);
                 agentReview = character.AgentReview;
+                predictedLoras = await this.PredictPortraitLorasAsync(
+                    character.GeneratedPrompt, 
+                    request.IsFullBody, 
+                    cancellationToken, 
+                    request.AnalysisModel
+                );
             }
 
             // =================================================================
@@ -120,11 +160,7 @@ namespace AIWriterPublisher.Api.Services
             // =================================================================
             // ИСПРАВЛЕНО: Вызываем собственный метод этого же класса через `this` (или просто напрямую),
             // передавая туда промпт от ИИ, флаг полного роста и модель анализа.
-            var predictedLoras = await this.PredictPortraitLorasAsync(
-                character.GeneratedPrompt, 
-                request.IsFullBody, 
-                cancellationToken, 
-                request.AnalysisModel);
+            
 
             // Собираем триггеры в одну строку
             var triggerWordsBuilder = new StringBuilder();
@@ -160,6 +196,41 @@ namespace AIWriterPublisher.Api.Services
                 AgentReview = agentReview,
                 ImageUrl = generatedImageUrl
             };
+        }
+        private string BuildFacePromptCacheKey(CharacterGenerationRequest request)
+        {
+            var identity = GetRequestIdentity(request);
+            var descriptionHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(request.UserDescription ?? string.Empty))).ToLowerInvariant();
+            return $"hero-face-prompt:{identity}:{descriptionHash}";
+        }
+
+        private string GetRequestIdentity(CharacterGenerationRequest request)
+        {
+            if (!string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return request.SessionId.Trim();
+            }
+
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext != null)
+            {
+                if (httpContext.Request.Headers.TryGetValue("X-Session-Id", out var sessionHeader) && !string.IsNullOrWhiteSpace(sessionHeader))
+                {
+                    return sessionHeader.ToString();
+                }
+
+                if (httpContext.Request.Headers.TryGetValue("X-Request-Id", out var requestHeader) && !string.IsNullOrWhiteSpace(requestHeader))
+                {
+                    return requestHeader.ToString();
+                }
+
+                if (httpContext.Request.Query.TryGetValue("sessionId", out var querySession) && !string.IsNullOrWhiteSpace(querySession))
+                {
+                    return querySession.ToString();
+                }
+            }
+
+            return "anonymous";
         }
     }
 }

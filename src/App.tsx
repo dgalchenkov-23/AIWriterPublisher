@@ -9,6 +9,7 @@ import type { ArtConcept } from './types/artConcept';
 import type {
   AppMode,
   GeneratedCover,
+  GeneratedFace,
   ProjectManifest,
   RenderSettings,
   SelfPromptState,
@@ -69,10 +70,20 @@ export default function App() {
     }));
   }, []);
 
-  const addGeneration = useCallback((cover: GeneratedCover) => {
+  const addGeneration = useCallback((item: GeneratedCover | GeneratedFace) => {
+    const historyItem: GeneratedCover =
+      'art_id' in item
+        ? item
+        : {
+            art_id: item.face_id,
+            url: item.url,
+            timestamp: item.timestamp,
+            technical_prompt_used: item.comfy_prompt || item.user_description,
+          };
+
     setManifest((prev) => ({
       ...prev,
-      generation_history: [cover, ...prev.generation_history],
+      generation_history: [historyItem, ...prev.generation_history],
     }));
   }, []);
 
@@ -136,7 +147,7 @@ export default function App() {
               selfPrompt={manifest.self_prompt}
               technicalSpec={manifest.technical_spec}
               renderSettings={manifest.render_settings}
-              onAddGeneration={addGeneration}
+              onAddGeneration={(face) => addGeneration(face)}
             />
           ) : (
             <div className="max-w-3xl">

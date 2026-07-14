@@ -317,9 +317,12 @@ namespace AIWriterPublisher.Api.Agents.LoraAgent
         private async Task<string> CallLlmApiAsync(string system, string user)
         {
 
-            string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
-            string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
-            string modelName = _configuration["AIServices:OpenRouter:Model"] ?? "openai/gpt-oss-120b:free";
+            // string baseUrl = _configuration["AIServices:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
+            // string apiKey = _configuration["AIServices:OpenRouter:ApiKey"] ?? "";
+            // string modelName = _configuration["AIServices:OpenRouter:Model"] ?? "openai/gpt-oss-120b:free";
+            string baseUrl = _configuration["AIServices:Groq:BaseUrl"] ?? "https://api.groq.com/openai/v1/";
+            string apiKey = _configuration["AIServices:Groq:ApiKey"] ?? "";
+            string modelName = _configuration["AIServices:Groq:Model"] ?? "openai/gpt-oss-120b";
 
             string cleanApiKey = apiKey?.Trim() ?? "";
 
